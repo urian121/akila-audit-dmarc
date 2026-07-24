@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+{% block title %}Akila - Informes DMARC{% endblock %}
+{% block content %}
+    <div class="max-w-5xl mx-auto px-6 py-16">
+      <h1 class="text-2xl text-zinc-900 tracking-tight mb-1">Informes DMARC</h1>
+      <p class="text-sm text-zinc-500 mb-8">Informes DMARC agregados recibidos de todos tus dominios monitoreados.</p>
+
+      <div class="bg-white rounded-md p-4 mb-4">
+        <div class="flex flex-wrap items-center gap-3 mb-3">
+          <span class="text-[11px] text-zinc-500 shrink-0">{{ total_items }} informe{{ '' if total_items == 1 else 's' }}</span>
+
+          <div class="inline-flex bg-zinc-100 rounded-md p-1">
+            {% for opt, label in [('todos', 'Todos'), ('aprobado', 'Aprobados'), ('con_fallas', 'Con fallas')] %}
+              <a
+                href="{{ url_for('dmarc_reports', estado=opt, rango=rango, q=q) }}"
+                class="px-3 py-1.5 rounded text-xs font-medium tracking-wide transition-colors {{ 'bg-[#2d2147] text-white' if estado == opt else 'text-zinc-500 hover:text-zinc-900' }}"
+              >{{ label }}</a>
+            {% endfor %}
+          </div>
+
+          <div class="inline-flex bg-zinc-100 rounded-md p-1">
+            {% for opt, label in [('7d', '7d'), ('30d', '30 días'), ('90d', '90 días'), ('todos', 'Todos')] %}
+              <a
+                href="{{ url_for('dmarc_reports', estado=estado, rango=opt, q=q) }}"
+                class="px-3 py-1.5 rounded text-xs font-medium tracking-wide transition-colors {{ 'bg-[#2d2147] text-white' if rango == opt else 'text-zinc-500 hover:text-zinc-900' }}"
+              >{{ label }}</a>
+            {% endfor %}
+          </div>
+
+          <form method="GET" class="flex-1 min-w-[220px] ml-auto">
+            <input type="hidden" name="estado" value="{{ estado }}">
+            <input type="hidden" name="rango" value="{{ rango }}">
+            <input
+              type="text"
+              name="q"
+              value="{{ q }}"
+              placeholder="Buscar reportero, dominio o ID de informe…"
+              class="w-full bg-white border border-zinc-200 rounded-md px-3 py-2 text-[12px] text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-[#2d2147]/60 transition-colors"
+            >
+          </form>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-[12px] text-left">
+            <thead>
+              <tr class="text-zinc-500 uppercase text-[10px] tracking-wide border-t border-zinc-100">
+                <th class="px-3 py-2.5">Remitente</th>
+                <th class="px-3 py-2.5">Dominio</th>
+                <th class="px-3 py-2.5">Recibido</th>
+                <th class="px-3 py-2.5">Período</th>
+                <th class="px-3 py-2.5">Volumen</th>
+                <th class="px-3 py-2.5">Cumplimiento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in items %}
+                <tr
+                  class="border-t border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors"
+                  onclick="location.href='{{ url_for('dmarc_report_detail', report_id=item.report.id) }}'"
+                >
+                  <td class="px-3 py-2.5 text-zinc-700">{{ item.report.org_name or '—' }}</td>
+                  <td class="px-3 py-2.5 text-zinc-700">{{ item.domain_shown }}</td>
+                  <td class="px-3 py-2.5 text-zinc-500">{{ item.report.received_at.strftime('%Y-%m-%d') }}</td>
+                  <td class="px-3 py-2.5 text-zinc-500">
+                    {{ item.report.date_begin.strftime('%Y-%m-%d') if item.report.date_begin else '—' }}
+                  </td>
+                  <td class="px-3 py-2.5 text-zinc-700">{{ '{:,}'.format(item.total).replace(',', '.') }}</td>
+                  <td class="px-3 py-2.5">
+                    {% if item.compliance_rate is none %}
+                      <span class="text-zinc-400">—</span>
+                    {% else %}
+                      <span class="{{ 'text-emerald-600' if item.compliance_rate >= 95 else ('text-amber-600' if item.compliance_rate >= 80 else 'text-rose-600') }} font-medium">{{ item.compliance_rate }}%</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="6" class="px-3 py-6 text-center text-zinc-400">No hay informes que coincidan con este filtro.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {% if total_pages > 1 %}
+        <div class="flex items-center justify-between">
+          <a
+            href="{{ url_for('dmarc_reports', estado=estado, rango=rango, q=q, page=page - 1) }}"
+            class="px-3 py-1.5 rounded-md text-xs bg-white {{ 'text-zinc-300 pointer-events-none' if page <= 1 else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+          >← Anterior</a>
+          <span class="text-[11px] text-zinc-400">página {{ page }} de {{ total_pages }}</span>
+          <a
+            href="{{ url_for('dmarc_reports', estado=estado, rango=rango, q=q, page=page + 1) }}"
+            class="px-3 py-1.5 rounded-md text-xs bg-white {{ 'text-zinc-300 pointer-events-none' if page >= total_pages else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+          >Siguiente →</a>
+        </div>
+      {% endif %}
+    </div>
+{% endblock %}

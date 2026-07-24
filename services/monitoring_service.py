@@ -1,7 +1,9 @@
 import re
 from datetime import timedelta
 
-from models import Alert, AggregateReport, DomainSnapshot, MonitoredDomain, db
+from sqlalchemy import case, func, or_
+
+from models import Alert, AggregateRecord, AggregateReport, DomainSnapshot, MonitoredDomain, db
 from models.monitoring import utcnow
 from services.checkdmarc_service import dns_has_mailbox_in_rua, dns_has_mailbox_in_tls_rpt_rua
 
@@ -92,21 +94,24 @@ def get_trends_data(monitored, days):
     """Arma volumen pass/fail por día y tasa de cumplimiento de los últimos `days` días,
     a partir de los reportes DMARC agregados reales ya recibidos para este dominio.
     Rellena los días sin reporte con 0 (compliance_series con None ese día, para no
-    dibujar un 0% falso donde en realidad no hubo tráfico que medir)."""
-    cutoff = utcnow() - timedelta(days=days)
-    reports = monitored.aggregate_reports.filter(AggregateReport.date_begin >= cutoff).all()
+    dibujar un 0% falso donde en realidad no hubo tráfico que medir).
 
-    daily = {}
-    for report in reports:
-        if report.date_begin is None:
-            continue
-        bucket = daily.setdefault(report.date_begin.date(), {"pass": 0, "fail": 0})
-        for record in report.records:
-            amount = record.count or 0
-            if record.dmarc_aligned:
-                bucket["pass"] += amount
-            else:
-                bucket["fail"] += amount
+    Una sola consulta SQL agregada (GROUP BY día) en vez de recorrer reporte por reporte
+    en Python — antes disparaba una query de records por cada AggregateReport (N+1),
+    notable con varias decenas de informes."""
+    cutoff = utcnow() - timedelta(days=days)
+    daily_rows = (
+        db.session.query(
+            func.date(AggregateReport.date_begin).label("day"),
+            func.sum(case((AggregateRecord.dmarc_aligned.is_(True), AggregateRecord.count), else_=0)).label("passed"),
+            func.sum(case((AggregateRecord.dmarc_aligned.is_(False), AggregateRecord.count), else_=0)).label("failed"),
+        )
+        .join(AggregateReport, AggregateRecord.report_id == AggregateReport.id)
+        .filter(AggregateReport.monitored_domain_id == monitored.id, AggregateReport.date_begin >= cutoff)
+        .group_by(func.date(AggregateReport.date_begin))
+        .all()
+    )
+    daily = {row.day: {"pass": row.passed or 0, "fail": row.failed or 0} for row in daily_rows if row.day}
 
     today = utcnow().date()
     labels, pass_series, fail_series, compliance_series = [], [], [], []
@@ -146,32 +151,41 @@ def get_subdomain_breakdown(monitored, days=30):
     `header_from` — el dominio o subdominio real que aparece en el "De:" de cada correo, no necesariamente
     el dominio raíz que se registró para monitoreo (ej. facturacion.midominio.com puede reportar aparte de
     midominio.com). Registros sin `header_from` (reportes viejos) caen bajo el dominio raíz. Ordenado por
-    volumen descendente — el remitente más activo primero."""
-    cutoff = utcnow() - timedelta(days=days)
-    reports = monitored.aggregate_reports.filter(AggregateReport.date_begin >= cutoff).all()
+    volumen descendente — el remitente más activo primero.
 
-    groups = {}
-    for report in reports:
-        for record in report.records:
-            name = (record.header_from or monitored.domain).strip().lower()
-            bucket = groups.setdefault(name, {"pass": 0, "fail": 0})
-            amount = record.count or 0
-            if record.dmarc_aligned:
-                bucket["pass"] += amount
-            else:
-                bucket["fail"] += amount
+    Agregado con una sola consulta SQL (GROUP BY) en vez de Python — mismo motivo que get_trends_data."""
+    cutoff = utcnow() - timedelta(days=days)
+    name_expr = case(
+        (
+            AggregateRecord.header_from.isnot(None) & (AggregateRecord.header_from != ""),
+            func.lower(AggregateRecord.header_from),
+        ),
+        else_=monitored.domain.lower(),
+    )
+    rows = (
+        db.session.query(
+            name_expr.label("name"),
+            func.sum(case((AggregateRecord.dmarc_aligned.is_(True), AggregateRecord.count), else_=0)).label("passed"),
+            func.sum(case((AggregateRecord.dmarc_aligned.is_(False), AggregateRecord.count), else_=0)).label("failed"),
+        )
+        .join(AggregateReport, AggregateRecord.report_id == AggregateReport.id)
+        .filter(AggregateReport.monitored_domain_id == monitored.id, AggregateReport.date_begin >= cutoff)
+        .group_by(name_expr)
+        .all()
+    )
 
     breakdown = []
-    for name, bucket in groups.items():
-        total = bucket["pass"] + bucket["fail"]
+    for row in rows:
+        passed, failed = row.passed or 0, row.failed or 0
+        total = passed + failed
         if not total:
             continue
         breakdown.append({
-            "name": name,
+            "name": row.name,
             "total": total,
-            "pass": bucket["pass"],
-            "fail": bucket["fail"],
-            "compliance_rate": round(bucket["pass"] / total * 100, 1),
+            "pass": passed,
+            "fail": failed,
+            "compliance_rate": round(passed / total * 100, 1),
         })
     breakdown.sort(key=lambda g: g["total"], reverse=True)
     return breakdown
@@ -188,31 +202,45 @@ def get_impact_analysis(monitored, days=30):
     activan sobre el mismo correo que hoy no alinea SPF ni DKIM (dmarc_aligned=False implica que ninguno
     de los dos alineó, es la definición de DMARC), solo cambia qué se hace con ese correo. Por eso no hay
     un cálculo separado por objetivo, la tabla de afectados es una sola.
-    """
-    cutoff = utcnow() - timedelta(days=days)
-    reports = monitored.aggregate_reports.filter(AggregateReport.date_begin >= cutoff).all()
 
-    total_pass = total_fail = 0
-    unique_sources = set()
-    affected = {}
-    for report in reports:
-        for record in report.records:
-            amount = record.count or 0
-            unique_sources.add(record.source_ip)
-            if record.dmarc_aligned:
-                total_pass += amount
-            else:
-                total_fail += amount
-                key = record.source_ip
-                bucket = affected.setdefault(key, {
-                    "source_ip": record.source_ip,
-                    "source_asn_org": record.source_asn_org or "Desconocido",
-                    "count": 0,
-                })
-                bucket["count"] += amount
+    Agregado con consultas SQL (GROUP BY) en vez de recorrer report.records en Python por cada informe —
+    mismo motivo que get_trends_data/get_subdomain_breakdown."""
+    cutoff = utcnow() - timedelta(days=days)
+    base = (
+        db.session.query(AggregateRecord)
+        .join(AggregateReport, AggregateRecord.report_id == AggregateReport.id)
+        .filter(AggregateReport.monitored_domain_id == monitored.id, AggregateReport.date_begin >= cutoff)
+    )
+
+    total_pass, total_fail, unique_sources = base.with_entities(
+        func.coalesce(func.sum(case((AggregateRecord.dmarc_aligned.is_(True), AggregateRecord.count), else_=0)), 0),
+        func.coalesce(func.sum(case((AggregateRecord.dmarc_aligned.is_(False), AggregateRecord.count), else_=0)), 0),
+        func.count(func.distinct(AggregateRecord.source_ip)),
+    ).one()
+
+    total_reports = (
+        db.session.query(func.count(AggregateReport.id))
+        .filter(AggregateReport.monitored_domain_id == monitored.id, AggregateReport.date_begin >= cutoff)
+        .scalar()
+    ) or 0
+
+    affected_rows = (
+        base.filter(AggregateRecord.dmarc_aligned.is_(False))
+        .with_entities(
+            AggregateRecord.source_ip,
+            func.max(AggregateRecord.source_asn_org).label("source_asn_org"),
+            func.sum(AggregateRecord.count).label("count"),
+        )
+        .group_by(AggregateRecord.source_ip)
+        .order_by(func.sum(AggregateRecord.count).desc())
+        .all()
+    )
+    affected_senders = [
+        {"source_ip": r.source_ip, "source_asn_org": r.source_asn_org or "Desconocido", "count": r.count}
+        for r in affected_rows
+    ]
 
     total = total_pass + total_fail
-    affected_senders = sorted(affected.values(), key=lambda s: s["count"], reverse=True)
 
     last_snapshot = monitored.snapshots.order_by(DomainSnapshot.checked_at.desc()).first()
     current_policy = (last_snapshot.raw_data or {}).get("dmarc_policy") if last_snapshot else None
@@ -220,15 +248,120 @@ def get_impact_analysis(monitored, days=30):
 
     return {
         "has_data": total > 0,
-        "total_reports": len(reports),
+        "total_reports": total_reports,
         "total_messages": total,
         "total_fail": total_fail,
         "pass_rate": round(total_pass / total * 100, 1) if total else None,
-        "unique_sources": len(unique_sources),
+        "unique_sources": unique_sources,
         "current_policy": current_policy,
         "policy_step": policy_step,
         "affected_senders": affected_senders,
         "ready_to_enforce": (total_pass / total * 100 if total else 0) >= 95,
+    }
+
+
+COMPLIANCE_PASS_THRESHOLD = 95  # mismo umbral que el color verde en la tabla — un informe "aprobado" no puede verse ámbar/rojo.
+
+
+def list_dmarc_reports(user_id, days=30, estado="todos", q="", page=1, per_page=20):
+    """Lista paginada de reportes DMARC agregados de TODOS los dominios monitoreados del usuario
+    (no de uno solo, a diferencia de get_trends_data), con volumen y % de cumplimiento de cada uno.
+
+    Agrega los AggregateRecord de cada reporte con una sola consulta SQL (GROUP BY report_id) en vez
+    de una consulta de records por reporte — antes N+1 hacía que cada filtro tardara notablemente con
+    varias decenas de informes.
+
+    `estado`: 'aprobado' (cumplimiento >= COMPLIANCE_PASS_THRESHOLD, el mismo umbral que pinta la celda
+    en verde — antes usaba exactamente 100%, lo que hacía que informes en verde (ej. 99.8%) aparecieran
+    bajo "Con fallas", contradiciendo su propio color), 'con_fallas' (por debajo del umbral), 'todos'
+    (sin filtrar). `days=None` = sin límite de fecha. `q` busca por reportero, dominio o ID de informe."""
+    totals = (
+        db.session.query(
+            AggregateRecord.report_id.label("report_id"),
+            func.sum(AggregateRecord.count).label("total"),
+            func.sum(case((AggregateRecord.dmarc_aligned.is_(True), AggregateRecord.count), else_=0)).label("passed"),
+            func.min(AggregateRecord.header_from).label("header_from"),
+        )
+        .group_by(AggregateRecord.report_id)
+        .subquery()
+    )
+
+    query = (
+        db.session.query(AggregateReport, MonitoredDomain, totals.c.total, totals.c.passed, totals.c.header_from)
+        .join(MonitoredDomain, AggregateReport.monitored_domain_id == MonitoredDomain.id)
+        .outerjoin(totals, totals.c.report_id == AggregateReport.id)
+        .filter(MonitoredDomain.user_id == user_id)
+    )
+    if days:
+        query = query.filter(AggregateReport.date_begin >= utcnow() - timedelta(days=days))
+    if q:
+        like = f"%{q.strip().lower()}%"
+        query = query.filter(or_(
+            db.func.lower(AggregateReport.org_name).like(like),
+            db.func.lower(AggregateReport.report_id).like(like),
+            db.func.lower(MonitoredDomain.domain).like(like),
+        ))
+    query = query.order_by(AggregateReport.received_at.desc())
+
+    items = []
+    for report, monitored, total, passed, header_from in query.all():
+        total = total or 0
+        passed = passed or 0
+        compliance_rate = round(passed / total * 100, 1) if total else None
+        items.append({
+            "report": report,
+            "monitored": monitored,
+            "domain_shown": header_from or monitored.domain,
+            "total": total,
+            "compliance_rate": compliance_rate,
+        })
+
+    if estado == "aprobado":
+        items = [i for i in items if i["compliance_rate"] is not None and i["compliance_rate"] >= COMPLIANCE_PASS_THRESHOLD]
+    elif estado == "con_fallas":
+        items = [i for i in items if i["compliance_rate"] is None or i["compliance_rate"] < COMPLIANCE_PASS_THRESHOLD]
+
+    total_items = len(items)
+    per_page = max(1, per_page)
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * per_page
+
+    return {
+        "items": items[start:start + per_page],
+        "total_items": total_items,
+        "page": page,
+        "total_pages": total_pages,
+    }
+
+
+def get_dmarc_report_detail(report_id, user_id):
+    """Detalle de un reporte DMARC agregado puntual: metadata + desglose SPF/DKIM + lista de registros.
+    Valida que el reporte pertenezca a un dominio monitoreado del usuario logueado (None si no)."""
+    report = (
+        db.session.query(AggregateReport)
+        .join(MonitoredDomain, AggregateReport.monitored_domain_id == MonitoredDomain.id)
+        .filter(AggregateReport.id == report_id, MonitoredDomain.user_id == user_id)
+        .first()
+    )
+    if not report:
+        return None
+
+    records = report.records.order_by(AggregateRecord.count.desc()).all()
+    total = sum(r.count or 0 for r in records)
+    passed = sum(r.count or 0 for r in records if r.dmarc_aligned)
+    domain_shown = records[0].header_from if records and records[0].header_from else report.domain_ref.domain
+
+    return {
+        "report": report,
+        "monitored": report.domain_ref,
+        "domain_shown": domain_shown,
+        "records": records,
+        "total": total,
+        "compliance_rate": round(passed / total * 100, 1) if total else None,
+        "only_spf": sum(r.count or 0 for r in records if r.spf_aligned and not r.dkim_aligned),
+        "only_dkim": sum(r.count or 0 for r in records if r.dkim_aligned and not r.spf_aligned),
+        "both_failed": sum(r.count or 0 for r in records if not r.spf_aligned and not r.dkim_aligned),
     }
 
 

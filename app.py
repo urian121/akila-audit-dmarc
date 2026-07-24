@@ -6,14 +6,14 @@ from dotenv import load_dotenv
 from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 
-from models import User, db
+from models import DomainSnapshot, User, db
 from services.ai_summary import generate_summary
 from services.auth_service import authenticate, register_user, update_email, update_password
 from services.card_builder import DMARC_POLICY_LABELS, build_cards, build_risks, build_summary
 from services.checkdmarc_service import build_dns_screen_data, run_check
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
-from services.monitoring_service import get_dashboard_data, get_domain_by_token, get_impact_analysis, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, register_domain, set_active, verify_dns, verify_tls_rpt
+from services.monitoring_service import get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
 
@@ -384,6 +384,37 @@ def tls_rpt_reports():
     elif estado == "no_verificado":
         domains = [d for d in domains if not d.tls_rpt_verified]
     return render_template("monitoring/tls_rpt_reports.html", domains=domains, estado=estado)
+
+
+@app.route("/informes-dmarc", methods=["GET"])
+@login_required
+def dmarc_reports():
+    """Lista paginada y filtrable de los reportes DMARC agregados de todos los dominios monitoreados del usuario."""
+    rango = request.args.get("rango", "30d")
+    if rango == "todos":
+        days = None
+    else:
+        if rango not in TRENDS_RANGE_DAYS:
+            rango = "30d"
+        days = TRENDS_RANGE_DAYS[rango]
+    estado = request.args.get("estado", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    data = list_dmarc_reports(current_user.id, days=days, estado=estado, q=q, page=page)
+    return render_template("monitoring/dmarc_reports.html", rango=rango, estado=estado, q=q, **data)
+
+
+@app.route("/informes-dmarc/<int:report_id>", methods=["GET"])
+@login_required
+def dmarc_report_detail(report_id):
+    """Detalle de un reporte DMARC agregado puntual: verdict, desglose SPF/DKIM y lista de remitentes."""
+    detail = get_dmarc_report_detail(report_id, current_user.id)
+    if not detail:
+        abort(404)
+    last_snapshot = detail["monitored"].snapshots.order_by(DomainSnapshot.checked_at.desc()).first()
+    current_policy = (last_snapshot.raw_data or {}).get("dmarc_policy") if last_snapshot else None
+    detail["policy_label"] = DMARC_POLICY_LABELS.get(current_policy, (current_policy or "Desconocida", None))[0]
+    return render_template("monitoring/dmarc_report_detail.html", **detail)
 
 
 @app.route("/tendencias", methods=["GET"])

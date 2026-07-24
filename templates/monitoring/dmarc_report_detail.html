@@ -1,0 +1,97 @@
+{% extends "layout.html" %}
+{% block title %}Akila - Informe DMARC{% endblock %}
+{% block content %}
+    <div class="max-w-4xl mx-auto px-6 py-16">
+      <div class="flex items-center gap-3 mb-1">
+        <a
+          href="{{ url_for('dmarc_reports') }}"
+          class="inline-flex items-center justify-center w-8 h-8 rounded-md bg-white text-zinc-500 hover:text-[#2d2147] transition-colors shrink-0"
+          title="Volver a informes DMARC"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+        </a>
+        <h1 class="text-2xl text-zinc-900 tracking-tight">{{ report.org_name or 'Remitente desconocido' }}</h1>
+      </div>
+      <p class="text-[12px] text-zinc-400 mb-8">{{ domain_shown }}</p>
+
+      {% set aprobado = compliance_rate == 100.0 %}
+      <div class="rounded-md p-4 mb-6 border {{ 'border-emerald-200 bg-emerald-50' if aprobado else 'border-amber-200 bg-amber-50' }}">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <span class="text-[10px] tracking-[0.15em] uppercase {{ 'text-emerald-600' if aprobado else 'text-amber-600' }}">Resultado de DMARC</span>
+          <span class="text-lg font-semibold {{ 'text-emerald-700' if aprobado else 'text-amber-700' }}">{{ 'APROBADO' if aprobado else 'CON FALLAS' }}</span>
+        </div>
+        <p class="text-[12px] {{ 'text-emerald-700' if aprobado else 'text-amber-700' }} mt-1">
+          Política: <strong>{{ policy_label }}</strong> · Volumen: <strong>{{ '{:,}'.format(total).replace(',', '.') }} correos</strong>
+          {% if compliance_rate is not none %} · Cumplimiento: <strong>{{ compliance_rate }}%</strong>{% endif %}
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+        <div class="bg-white rounded-md p-4 text-center">
+          <p class="text-xl font-semibold text-amber-600">{{ only_spf }}</p>
+          <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Solo con SPF</p>
+        </div>
+        <div class="bg-white rounded-md p-4 text-center">
+          <p class="text-xl font-semibold text-zinc-700">{{ only_dkim }}</p>
+          <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Solo DKIM</p>
+        </div>
+        <div class="bg-white rounded-md p-4 text-center">
+          <p class="text-xl font-semibold text-rose-600">{{ both_failed }}</p>
+          <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Ambos fallaron</p>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-md p-4 mb-6">
+        <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-3">Metadata del informe</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px]">
+          <div>
+            <p class="text-[10px] text-zinc-400 uppercase tracking-wide">ID del informe</p>
+            <p class="text-zinc-700 font-mono">{{ report.report_id or '—' }}</p>
+          </div>
+          <div>
+            <p class="text-[10px] text-zinc-400 uppercase tracking-wide">Rango de fechas</p>
+            <p class="text-zinc-700">
+              {{ report.date_begin.strftime('%Y-%m-%d') if report.date_begin else '—' }} → {{ report.date_end.strftime('%Y-%m-%d') if report.date_end else '—' }}
+            </p>
+          </div>
+        </div>
+        <p class="text-[11px] text-zinc-400 mt-3 leading-relaxed">
+          Correo de contacto, modo de alineación (adkim/aspf), política de subdominios y datos crudos del XML
+          todavía no se guardan al ingerir el reporte — solo lo de arriba está disponible por ahora.
+        </p>
+      </div>
+
+      <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-3">Registros ({{ records | length }})</h2>
+      <div class="bg-white rounded-md overflow-x-auto">
+        <table class="w-full text-[12px] text-left">
+          <thead>
+            <tr class="text-zinc-500 uppercase text-[10px] tracking-wide">
+              <th class="px-3 py-2.5">IP de origen</th>
+              <th class="px-3 py-2.5">Servicio</th>
+              <th class="px-3 py-2.5">País</th>
+              <th class="px-3 py-2.5">Mensajes</th>
+              <th class="px-3 py-2.5">Disposición</th>
+              <th class="px-3 py-2.5">SPF</th>
+              <th class="px-3 py-2.5">DKIM</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in records %}
+              <tr class="border-t border-zinc-100">
+                <td class="px-3 py-2 text-zinc-700">{{ r.source_ip }}</td>
+                <td class="px-3 py-2"><span class="text-[10px] bg-zinc-100 text-zinc-600 rounded px-1.5 py-0.5">{{ r.source_asn_org or 'Desconocido' }}</span></td>
+                <td class="px-3 py-2 text-zinc-500">{{ r.source_country or '—' }}</td>
+                <td class="px-3 py-2 text-zinc-700">{{ r.count }}</td>
+                <td class="px-3 py-2 text-zinc-500">{{ r.disposition or '—' }}</td>
+                <td class="px-3 py-2"><span class="text-[10px] {{ 'text-emerald-700 bg-emerald-50' if r.spf_aligned else 'text-rose-700 bg-rose-50' }} rounded px-1.5 py-0.5">{{ 'Aprobado' if r.spf_aligned else 'Fallido' }}</span></td>
+                <td class="px-3 py-2"><span class="text-[10px] {{ 'text-emerald-700 bg-emerald-50' if r.dkim_aligned else 'text-rose-700 bg-rose-50' }} rounded px-1.5 py-0.5">{{ 'Aprobado' if r.dkim_aligned else 'Fallido' }}</span></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+{% endblock %}

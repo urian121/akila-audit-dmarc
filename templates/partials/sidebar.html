@@ -42,6 +42,8 @@
       Monitores
     </a>
 
+    <p class="px-3 mb-2 mt-4 text-[10px] tracking-[0.2em] text-zinc-400 uppercase">Reportes</p>
+
     <a href="{{ url_for('trends') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint in ('trends', 'trends_domain') else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
@@ -57,7 +59,18 @@
       Reportes TLS-RPT
     </a>
 
-    <a href="{{ url_for('documentacion') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint == 'documentacion' else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
+    <a href="{{ url_for('dmarc_reports') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint in ('dmarc_reports', 'dmarc_report_detail') else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <line x1="16" y1="13" x2="8" y2="13"></line>
+        <line x1="16" y1="17" x2="8" y2="17"></line>
+        <polyline points="10 9 9 9 8 9"></polyline>
+      </svg>
+      Informes DMARC
+    </a>
+
+    <a href="{{ url_for('documentacion') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 mt-4 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint == 'documentacion' else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python -c ' *)",
       "Bash(echo \"---exit code: $?---\")",
-      "Bash(python -m py_compile services/monitoring_service.py)"
+      "Bash(python -m py_compile services/monitoring_service.py)",
+      "Bash(python -m py_compile services/monitoring_service.py app.py)"
     ]
   }
 }
