@@ -42,6 +42,21 @@
       Monitores
     </a>
 
+    <a href="{{ url_for('trends') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint in ('trends', 'trends_domain') else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+      </svg>
+      Tendencias
+    </a>
+
+    <a href="{{ url_for('tls_rpt_reports') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint == 'tls_rpt_reports' else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+      Reportes TLS-RPT
+    </a>
+
     <a href="{{ url_for('documentacion') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint == 'documentacion' else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>

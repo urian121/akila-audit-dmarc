@@ -9,11 +9,11 @@ from flask_login import LoginManager, current_user, login_required, login_user, 
 from models import User, db
 from services.ai_summary import generate_summary
 from services.auth_service import authenticate, register_user, update_email, update_password
-from services.card_builder import build_cards, build_risks, build_summary
+from services.card_builder import DMARC_POLICY_LABELS, build_cards, build_risks, build_summary
 from services.checkdmarc_service import build_dns_screen_data, run_check
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
-from services.monitoring_service import get_dashboard_data, get_domain_by_token, group_unknown_sender_alerts, list_domains, register_domain, set_active, verify_dns, verify_tls_rpt
+from services.monitoring_service import get_dashboard_data, get_domain_by_token, get_impact_analysis, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, register_domain, set_active, verify_dns, verify_tls_rpt
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
 
@@ -365,6 +365,62 @@ def monitoring_list():
     return render_template("monitoring/list.html", monitored_domains=list_domains(current_user.id))
 
 
+TRENDS_RANGE_DAYS = {"7d": 7, "30d": 30, "90d": 90}
+
+
+@app.route("/reportes-tls-rpt", methods=["GET"])
+@login_required
+def tls_rpt_reports():
+    """Lista filtrable de los dominios monitoreados con su estado de verificación DNS de TLS-RPT.
+
+    No hay ingesta de reportes TLS-RPT reales todavía (parsedmarc no tiene cableado ese webhook,
+    solo el de reportes DMARC agregados) — esto muestra sólo si el registro TLS-RPT ya quedó
+    publicado con nuestra casilla de monitoreo, que es el mismo chequeo que ya existe en la
+    pantalla de instrucciones de DNS de cada dominio."""
+    domains = list_domains(current_user.id)
+    estado = request.args.get("estado", "todos")
+    if estado == "verificado":
+        domains = [d for d in domains if d.tls_rpt_verified]
+    elif estado == "no_verificado":
+        domains = [d for d in domains if not d.tls_rpt_verified]
+    return render_template("monitoring/tls_rpt_reports.html", domains=domains, estado=estado)
+
+
+@app.route("/tendencias", methods=["GET"])
+@login_required
+def trends():
+    """Redirige a las tendencias del primer dominio monitoreado del usuario, o muestra el estado vacío si no tiene ninguno."""
+    domains = list_domains(current_user.id)
+    if not domains:
+        return render_template("monitoring/trends.html", domains=[], monitored=None)
+    return redirect(url_for("trends_domain", access_token=domains[0].access_token))
+
+
+@app.route("/tendencias/<access_token>", methods=["GET"])
+@login_required
+def trends_domain(access_token):
+    """Página de tendencias (tasa de cumplimiento + volumen pass/fail) de un dominio monitoreado del usuario logueado."""
+    monitored = get_domain_by_token(access_token)
+    if not monitored or monitored.user_id != current_user.id:
+        abort(404)
+    rango = request.args.get("rango", "30d")
+    if rango not in TRENDS_RANGE_DAYS:
+        rango = "30d"
+    trend_data = get_trends_data(monitored, TRENDS_RANGE_DAYS[rango])
+    policy_label = DMARC_POLICY_LABELS.get(trend_data["dmarc_policy"], (trend_data["dmarc_policy"] or "Desconocida", None))[0]
+    impact = get_impact_analysis(monitored, TRENDS_RANGE_DAYS[rango])
+    impact["current_policy_label"] = DMARC_POLICY_LABELS.get(impact["current_policy"], (impact["current_policy"] or "Desconocida", None))[0]
+    return render_template(
+        "monitoring/trends.html",
+        domains=list_domains(current_user.id),
+        monitored=monitored,
+        rango=rango,
+        trend_data=trend_data,
+        impact=impact,
+        policy_label=policy_label,
+    )
+
+
 @app.route("/monitoreo/<access_token>", methods=["GET"])
 def monitoring_dashboard(access_token):
     """Dashboard privado de un dominio monitoreado: reportes recibidos y alertas generadas."""
@@ -374,7 +430,8 @@ def monitoring_dashboard(access_token):
     alert_groups, other_alerts = group_unknown_sender_alerts(data["alerts"])
     return render_template(
         "monitoring/dashboard.html", rua_mailbox=DMARC_REPORTS_MAILBOX,
-        alert_groups=alert_groups, other_alerts=other_alerts, **data,
+        alert_groups=alert_groups, other_alerts=other_alerts,
+        subdomain_breakdown=get_subdomain_breakdown(data["monitored"]), **data,
     )
 
 

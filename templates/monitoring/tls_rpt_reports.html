@@ -1,0 +1,55 @@
+{% extends "layout.html" %}
+{% block title %}Akila - Reportes TLS-RPT{% endblock %}
+{% block content %}
+    <div class="max-w-4xl mx-auto px-6 py-16">
+      <h1 class="text-2xl text-zinc-900 tracking-tight mb-1">Reportes TLS-RPT</h1>
+      <p class="text-sm text-zinc-500 leading-relaxed mb-8 max-w-2xl">
+        Estado de verificación de TLS-RPT de tus dominios monitoreados: si el registro DNS ya tiene publicada
+        tu casilla de monitoreo en el <code class="text-zinc-700">rua=</code>. Todavía no ingerimos reportes
+        reales de fallas TLS, solo el chequeo de DNS.
+      </p>
+
+      <div class="inline-flex bg-white rounded-md p-1 mb-6">
+        {% for opt, label in [('todos', 'Todos'), ('verificado', 'Verificados'), ('no_verificado', 'No verificados')] %}
+          <a
+            href="{{ url_for('tls_rpt_reports', estado=opt) }}"
+            class="px-3 py-1.5 rounded text-xs font-medium tracking-wide transition-colors {{ 'bg-[#2d2147] text-white' if estado == opt else 'text-zinc-500 hover:text-zinc-900' }}"
+          >{{ label }}</a>
+        {% endfor %}
+      </div>
+
+      <div class="grid grid-cols-1 gap-3">
+        {% for d in domains %}
+          <div class="rise flex items-center justify-between gap-3 bg-white rounded-md p-4">
+            <div class="flex items-center gap-3">
+              <span class="text-[10px] tracking-wider rounded px-1.5 py-0.5 {{ 'border border-emerald-200 text-emerald-700 bg-emerald-50' if d.tls_rpt_verified else 'text-zinc-500 bg-zinc-100' }}">
+                {{ 'VERIFICADO' if d.tls_rpt_verified else 'NO VERIFICADO' }}
+              </span>
+              <div>
+                <p class="text-[13px] text-zinc-800">{{ d.domain }}</p>
+                <p class="text-[10px] text-zinc-400 mt-0.5">
+                  {% if d.tls_rpt_verified_at %}
+                    última verificación: {{ d.tls_rpt_verified_at.strftime('%Y-%m-%d %H:%M') }} UTC
+                  {% else %}
+                    nunca verificado
+                  {% endif %}
+                </p>
+              </div>
+            </div>
+            <a
+              href="{{ url_for('monitoring_dns', access_token=d.access_token) }}"
+              class="shrink-0 text-[11px] text-zinc-500 tracking-[0.15em] uppercase hover:text-[#2d2147] transition-colors"
+            >Ver DNS →</a>
+          </div>
+        {% else %}
+          <p class="text-[12px] text-zinc-400">
+            {% if estado == 'todos' %}
+              Todavía no hay dominios registrados para monitoreo.
+            {% else %}
+              No hay dominios que coincidan con este filtro.
+            {% endif %}
+          </p>
+        {% endfor %}
+      </div>
+    </div>
+{% endblock %}

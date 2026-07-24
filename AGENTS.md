@@ -57,6 +57,7 @@
 * Activar/desactivar (`is_active`): pausar, nunca eliminar — reversible, conserva historial.
 * Generador de política DMARC (`utils/dmarc_builder.py`): vista previa, no se persiste. `p`/`pct`/`adkim`/`aspf` siempre arrancan conservadores (`p=none`, `pct=25`, `adkim=r`, `aspf=r`) sin importar la política real ya publicada — decisión explícita del usuario, riesgo asumido a propósito. `sp`/`rua`/`ruf` sí respetan el valor real si ya existe.
 * MAX_REPORT_RECORDS=30 en el PDF del dashboard: sin este tope, un reporte real grande revienta el layout (`LayoutError`) — se recorta y se avisa cuántos quedaron afuera, nunca en silencio.
+* **Tendencias** (`GET /tendencias`, `GET /tendencias/<access_token>?rango=7d|30d|90d`, `templates/monitoring/trends.html`, ambas `@login_required`): `get_trends_data()` en `monitoring_service.py` arma volumen pass/fail por día y tasa de cumplimiento a partir de `AggregateRecord.count`/`dmarc_aligned` reales — rellena días sin reporte con 0 (pero `compliance_series` queda en `None` esos días, no en `0%`, para no mostrar una falla donde en realidad no hubo tráfico que medir). Gráficos con Chart.js (CDN, solo cargado en esta página vía `head_extra`) — verde `#10b981` para pass/cumplimiento, rojo `#f43f5e` para fail, un solo eje por gráfico. `/tendencias` (sin token) redirige al primer dominio del usuario; `trends_domain` valida `monitored.user_id == current_user.id` (404 si no), a diferencia del dashboard por token que es público a propósito.
 
 ## Login (Flask-Login)
 

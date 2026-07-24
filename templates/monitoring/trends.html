@@ -1,0 +1,285 @@
+{% extends "layout.html" %}
+{% block title %}Akila - Tendencias{% endblock %}
+{% block content %}
+    <div class="max-w-5xl mx-auto px-6 py-16">
+      <h1 class="text-2xl text-zinc-900 tracking-tight mb-1">Tendencias</h1>
+      <p class="text-sm text-zinc-500 mb-8">Volumen de correo y tasa de cumplimiento DMARC a partir de los reportes agregados reales.</p>
+
+      {% if not monitored %}
+        <div class="bg-white rounded-md p-8 text-center">
+          <p class="text-sm text-zinc-500 mb-4">Todavía no tenés dominios registrados para monitoreo.</p>
+          <a href="{{ url_for('monitoring_register') }}" class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-md bg-[#2d2147] hover:bg-[#2d2147]/90 text-white text-xs font-semibold tracking-wide transition-colors">
+            Registrar un dominio
+          </a>
+        </div>
+      {% else %}
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <select
+            onchange="location.href = this.value"
+            class="bg-white rounded-md px-4 py-2.5 text-sm text-zinc-900 border border-zinc-200 focus:border-[#2d2147]/60 outline-none transition-colors"
+          >
+            {% for d in domains %}
+              <option value="{{ url_for('trends_domain', access_token=d.access_token, rango=rango) }}" {{ 'selected' if d.access_token == monitored.access_token else '' }}>
+                {{ d.domain }}
+              </option>
+            {% endfor %}
+          </select>
+
+          <div class="inline-flex bg-white rounded-md p-1">
+            {% for opt, label in [('7d', '7d'), ('30d', '30 días'), ('90d', '90 días')] %}
+              <a
+                href="{{ url_for('trends_domain', access_token=monitored.access_token, rango=opt) }}"
+                class="px-3 py-1.5 rounded text-xs font-medium tracking-wide transition-colors {{ 'bg-[#2d2147] text-white' if rango == opt else 'text-zinc-500 hover:text-zinc-900' }}"
+              >{{ label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if not trend_data.has_data %}
+          <div class="bg-white rounded-md p-8 text-center">
+            <p class="text-sm text-zinc-500">Todavía no llegó ningún reporte DMARC de <strong class="text-zinc-700">{{ monitored.domain }}</strong> en este rango.</p>
+          </div>
+        {% else %}
+          <div class="bg-white rounded-md p-6 mb-6">
+            <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1">Estado actual</h2>
+            <p class="text-[11px] text-zinc-500 mb-5">Trayectoria de aplicación de la política DMARC de <strong class="text-zinc-700">{{ monitored.domain }}</strong></p>
+
+            <div class="flex items-start mb-6">
+              {% for step_label, step_desc in [('p=ninguno', 'Solo monitorea'), ('p=cuarentena', 'Envía a spam'), ('p=rechazar', 'Bloquea por completo')] %}
+                <div class="flex flex-col items-center text-center px-1">
+                  <span class="w-4 h-4 rounded-full shrink-0 {{ 'bg-emerald-400' if loop.index0 < impact.policy_step else ('bg-[#2d2147]' if loop.index0 == impact.policy_step else 'bg-zinc-200') }}"></span>
+                  <p class="text-[11px] font-semibold text-zinc-800 mt-2 whitespace-nowrap">{{ step_label }}</p>
+                  <p class="text-[10px] text-zinc-400 whitespace-nowrap">{{ step_desc }}</p>
+                </div>
+                {% if not loop.last %}
+                  <div class="flex-1 h-0.5 mt-2 {{ 'bg-emerald-400' if loop.index0 < impact.policy_step else 'bg-zinc-200' }}"></div>
+                {% endif %}
+              {% endfor %}
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div class="bg-zinc-50 rounded-md p-3 text-center">
+                <p class="text-xl font-semibold text-zinc-800">{{ impact.total_reports }}</p>
+                <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Informes totales</p>
+              </div>
+              <div class="bg-zinc-50 rounded-md p-3 text-center">
+                <p class="text-xl font-semibold text-zinc-800">{{ '{:,}'.format(impact.total_messages).replace(',', '.') }}</p>
+                <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Mensajes totales</p>
+              </div>
+              <div class="bg-zinc-50 rounded-md p-3 text-center">
+                <p class="text-xl font-semibold {{ 'text-emerald-600' if impact.pass_rate >= 95 else ('text-amber-600' if impact.pass_rate >= 80 else 'text-rose-600') }}">{{ impact.pass_rate }}%</p>
+                <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Tasa de cumplimiento</p>
+              </div>
+              <div class="bg-zinc-50 rounded-md p-3 text-center">
+                <p class="text-xl font-semibold text-zinc-800">{{ impact.unique_sources }}</p>
+                <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Fuentes únicas</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div class="bg-white rounded-md p-6">
+              <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-4">Tasa de cumplimiento</h2>
+              <div class="relative h-56 sm:h-64">
+                <canvas id="compliance-chart" role="img" aria-label="Proporción de correo aprobado vs. fallido en el período"></canvas>
+              </div>
+            </div>
+            <div class="bg-white rounded-md p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase">Volumen de correo</h2>
+                <span class="text-[11px] text-zinc-400">{{ trend_data.period_label }}</span>
+              </div>
+              <div class="relative h-56 sm:h-64">
+                <canvas id="volume-chart" role="img" aria-label="Volumen de correo aprobado y fallido por día"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-md p-6 mb-6">
+            <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1">Análisis de impacto</h2>
+            <p class="text-[11px] text-zinc-500 mb-4">
+              Qué pasaría si reforzás la política de <strong class="text-zinc-700">{{ monitored.domain }}</strong>
+              (hoy en <strong class="text-zinc-700">{{ impact.current_policy_label }}</strong>).
+            </p>
+
+            <div class="inline-flex bg-zinc-100 rounded-md p-1 mb-4">
+              <button type="button" id="objetivo-cuarentena" onclick="setObjetivoImpacto('cuarentena')" class="px-3 py-1.5 rounded text-xs font-medium tracking-wide transition-colors bg-[#2d2147] text-white">Cuarentena</button>
+              <button type="button" id="objetivo-rechazar" onclick="setObjetivoImpacto('rechazar')" class="px-3 py-1.5 rounded text-xs font-medium tracking-wide transition-colors text-zinc-500 hover:text-zinc-900">Rechazar</button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div class="bg-zinc-50 rounded-md p-3 text-center">
+                <p class="text-xl font-semibold text-zinc-800">{{ '{:,}'.format(impact.total_messages).replace(',', '.') }}</p>
+                <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Mensajes totales</p>
+              </div>
+              <div class="bg-zinc-50 rounded-md p-3 text-center">
+                <p class="text-xl font-semibold {{ 'text-zinc-400' if impact.total_fail == 0 else 'text-amber-600' }}">{{ impact.total_fail }}</p>
+                <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Se vería <span id="objetivo-verbo">afectado</span></p>
+              </div>
+              <div class="bg-zinc-50 rounded-md p-3 text-center">
+                <p class="text-xl font-semibold {{ 'text-emerald-600' if impact.pass_rate >= 95 else ('text-amber-600' if impact.pass_rate >= 80 else 'text-rose-600') }}">{{ impact.pass_rate }}%</p>
+                <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Sin impacto</p>
+              </div>
+            </div>
+
+            {% if impact.ready_to_enforce %}
+              <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 mb-5">
+                <p class="text-[13px] font-semibold text-emerald-800">Listo para reforzar</p>
+                <p id="objetivo-mensaje-listo" class="text-[12px] text-emerald-700">Tu tasa de cumplimiento del {{ impact.pass_rate }}% supera el umbral recomendado (95%) para pasar a cuarentena.</p>
+              </div>
+            {% else %}
+              <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 mb-5">
+                <p class="text-[13px] font-semibold text-amber-800">Todavía no</p>
+                <p class="text-[12px] text-amber-700">Tu tasa de cumplimiento ({{ impact.pass_rate }}%) está bajo el umbral recomendado (95%) — revisá los emisores fallidos antes de reforzar la política.</p>
+              </div>
+            {% endif %}
+
+            {% if impact.affected_senders %}
+              <h3 class="text-[11px] text-zinc-600 font-semibold mb-1">Emisores que se verían afectados ({{ impact.affected_senders | length }})</h3>
+              <p class="text-[11px] text-zinc-500 leading-relaxed mb-3">
+                Estas fuentes no pasan SPF ni DKIM. Con <span id="objetivo-frase">cuarentena</span>, sus mensajes <span id="objetivo-accion">se enviarían a spam</span>.
+              </p>
+              <div class="overflow-x-auto">
+                <table class="w-full text-[12px] text-left">
+                  <thead>
+                    <tr class="text-zinc-500 uppercase text-[10px] tracking-wide">
+                      <th class="px-3 py-2">IP de origen</th>
+                      <th class="px-3 py-2">Servicio</th>
+                      <th class="px-3 py-2">Mensajes</th>
+                      <th class="px-3 py-2">SPF</th>
+                      <th class="px-3 py-2">DKIM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for s in impact.affected_senders[:20] %}
+                      <tr class="border-t border-zinc-100">
+                        <td class="px-3 py-2 text-zinc-700">{{ s.source_ip }}</td>
+                        <td class="px-3 py-2"><span class="text-[10px] bg-zinc-100 text-zinc-600 rounded px-1.5 py-0.5">{{ s.source_asn_org }}</span></td>
+                        <td class="px-3 py-2 text-zinc-700">{{ s.count }}</td>
+                        <td class="px-3 py-2"><span class="text-[10px] text-rose-700 bg-rose-50 rounded px-1.5 py-0.5">FALLAR</span></td>
+                        <td class="px-3 py-2"><span class="text-[10px] text-rose-700 bg-rose-50 rounded px-1.5 py-0.5">FALLAR</span></td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+                {% if impact.affected_senders | length > 20 %}
+                  <p class="text-[10px] text-zinc-400 mt-2">+{{ impact.affected_senders | length - 20 }} emisores más.</p>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+
+          <details>
+            <summary class="text-[11px] text-zinc-400 cursor-pointer hover:text-zinc-600 transition-colors">Ver como tabla</summary>
+            <div class="bg-white rounded-md mt-3 overflow-x-auto">
+              <table class="w-full text-[12px] text-left">
+                <thead>
+                  <tr class="text-zinc-500 uppercase text-[10px] tracking-wide">
+                    <th class="px-4 py-2.5">Fecha</th>
+                    <th class="px-4 py-2.5">Aprobados</th>
+                    <th class="px-4 py-2.5">Fallidos</th>
+                    <th class="px-4 py-2.5">Cumplimiento</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for label in trend_data.labels %}
+                    <tr class="border-t border-zinc-100">
+                      <td class="px-4 py-2 text-zinc-700">{{ label }}</td>
+                      <td class="px-4 py-2 text-emerald-700">{{ trend_data.pass_series[loop.index0] }}</td>
+                      <td class="px-4 py-2 text-rose-700">{{ trend_data.fail_series[loop.index0] }}</td>
+                      <td class="px-4 py-2 text-zinc-700">{{ trend_data.compliance_series[loop.index0] ~ '%' if trend_data.compliance_series[loop.index0] is not none else '—' }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        {% endif %}
+      {% endif %}
+    </div>
+{% endblock %}
+
+{% block head_extra %}
+  {% if trend_data and trend_data.has_data %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script>
+      const trendLabels = {{ trend_data.labels | tojson }};
+      const trendPass = {{ trend_data.pass_series | tojson }};
+      const trendFail = {{ trend_data.fail_series | tojson }};
+      const totalPass = {{ trend_data.total_pass | tojson }};
+      const totalFail = {{ trend_data.total_fail | tojson }};
+
+      document.addEventListener('DOMContentLoaded', () => {
+        const gridColor = '#f4f4f5';
+        const tickColor = '#a1a1aa';
+        const totalMessages = totalPass + totalFail;
+
+        new Chart(document.getElementById('compliance-chart'), {
+          type: 'pie',
+          data: {
+            labels: ['Aprobado', 'Fallido'],
+            datasets: [{
+              data: [totalPass, totalFail],
+              backgroundColor: ['#10b981', '#f43f5e'],
+              borderColor: '#ffffff',
+              borderWidth: 2,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom', labels: { color: '#52525b', boxWidth: 10, boxHeight: 10, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `${ctx.label}: ${ctx.parsed} (${totalMessages ? (ctx.parsed / totalMessages * 100).toFixed(1) : 0}%)`,
+                },
+              },
+            },
+          },
+        });
+
+        new Chart(document.getElementById('volume-chart'), {
+          type: 'bar',
+          data: {
+            labels: trendLabels,
+            datasets: [
+              { label: 'Aprobados', data: trendPass, backgroundColor: '#10b981', borderRadius: 4, maxBarThickness: 22 },
+              { label: 'Fallidos', data: trendFail, backgroundColor: '#f43f5e', borderRadius: 4, maxBarThickness: 22 },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', labels: { color: '#52525b', boxWidth: 10, boxHeight: 10, font: { size: 11 } } } },
+            scales: {
+              y: { beginAtZero: true, ticks: { color: tickColor }, grid: { color: gridColor } },
+              x: {
+                ticks: { color: tickColor, callback: (value, index) => trendLabels[index].split('-')[2] },
+                grid: { display: false },
+              },
+            },
+          },
+        });
+      });
+    </script>
+  {% endif %}
+  {% if impact and impact.affected_senders %}
+    <script>
+      function setObjetivoImpacto(target) {
+        const isReject = target === 'rechazar';
+        const activeCls = 'px-3 py-1.5 rounded text-xs font-medium tracking-wide transition-colors bg-[#2d2147] text-white';
+        const inactiveCls = 'px-3 py-1.5 rounded text-xs font-medium tracking-wide transition-colors text-zinc-500 hover:text-zinc-900';
+        document.getElementById('objetivo-cuarentena').className = isReject ? inactiveCls : activeCls;
+        document.getElementById('objetivo-rechazar').className = isReject ? activeCls : inactiveCls;
+        document.getElementById('objetivo-verbo').textContent = isReject ? 'bloqueado' : 'afectado';
+        document.getElementById('objetivo-frase').textContent = isReject ? 'rechazo' : 'cuarentena';
+        document.getElementById('objetivo-accion').textContent = isReject ? 'se bloquearían por completo' : 'se enviarían a spam';
+        const listoMsg = document.getElementById('objetivo-mensaje-listo');
+        if (listoMsg) {
+          listoMsg.textContent = `Tu tasa de cumplimiento del {{ impact.pass_rate }}% supera el umbral recomendado (95%) para pasar a ${isReject ? 'rechazo' : 'cuarentena'}.`;
+        }
+      }
+    </script>
+  {% endif %}
+{% endblock %}
