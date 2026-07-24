@@ -422,10 +422,38 @@ def webhook_dmarc_aggregate(secret):
     return jsonify({"status": "ok"}), 200
 
 
+def _run_recheck_domains_job():
+    """Corre jobs/recheck_domains.py dentro del mismo proceso web (ver start_scheduler())."""
+    from jobs.recheck_domains import main as recheck_domains_main  # import diferido: evita ciclo con este módulo
+    try:
+        recheck_domains_main()
+    except Exception as error:
+        db.session.rollback()
+        print(f"[scheduler] error en recheck_domains: {error}")
+
+
+def start_scheduler():
+    """Programa la vigilancia DNS periódica (antes un Railway Cron aparte, servicio 'recheck-domains-cron')
+    para correr dentro de este mismo proceso — sólo válido mientras el servicio corra una única instancia
+    (sin réplicas), o el job se dispararía una vez por instancia."""
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    interval_hours = float(os.environ.get("RECHECK_DOMAINS_INTERVAL_HOURS", "12"))
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(_run_recheck_domains_job, "interval", hours=interval_hours, next_run_time=datetime.now(timezone.utc))
+    scheduler.start()
+
+
 if __name__ == "__main__":
     # Railway (y la mayoría de PaaS) inyectan el puerto real en $PORT y sólo
     # enrutan tráfico a 0.0.0.0 — escuchar en 127.0.0.1:5000 fijo no es alcanzable
     # desde afuera del contenedor.
     debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+
+    # Con el reloader de Flask activo (debug_mode), este bloque se ejecuta dos
+    # veces (proceso "watcher" + proceso worker real) — sólo arrancar el
+    # scheduler en el worker real, o quedarían dos corriendo en paralelo.
+    if not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        start_scheduler()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=debug_mode)

@@ -98,11 +98,11 @@ Notas rápidas para no confundir estas variables entre sí:
 * Las credenciales IMAP de la casilla (host/usuario/password) van en las `PARSEDMARC_IMAP_*` del worker, nunca en `.env` de la app web.
 * `SMTP_*` es para mandar los correos de alerta (`services/notifications.py`) — no tiene relación con recibir reportes.
 
-### `python jobs/recheck_domains.py`
+### `jobs/recheck_domains.py`
 
-No es una ruta HTTP — es el job de vigilancia DNS periódica, pensado para correr como cron (ej. cada 6-12h). Reutiliza `run_check()` para cada dominio registrado, compara contra el último chequeo guardado, y genera una alerta si cambió la política DMARC, el SPF o los selectores DKIM encontrados. Al final manda por correo (SMTP, variables `SMTP_*`) todas las alertas pendientes de notificar, incluidas las de remitentes desconocidos generadas por el webhook.
+No es una ruta HTTP — es el job de vigilancia DNS periódica. Reutiliza `run_check()` para cada dominio registrado, compara contra el último chequeo guardado, y genera una alerta si cambió la política DMARC, el SPF o los selectores DKIM encontrados. Al final manda por correo (SMTP, variables `SMTP_*`) todas las alertas pendientes de notificar, incluidas las de remitentes desconocidos generadas por el webhook.
 
-**Estado actual (recordatorio)**: ya existe un servicio `recheck-domains-cron` en Railway (mismo proyecto que `akila-dmarc` y `parsedmarc-worker`), configurado con Cron Schedule — corre este script automáticamente cada tantas horas, sin que nadie lo ejecute a mano. Es el que efectivamente manda las alertas por correo (a Gmail o cualquier proveedor, según `SMTP_*`) cuando detecta un cambio de DNS o un remitente desconocido. Variables que tiene: `DATABASE_URL` (misma base que `akila-dmarc`) y `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`SMTP_FROM`.
+**Estado actual**: ya **no** corre como servicio/cron aparte en Railway. Se programa solo, dentro del mismo proceso de `akila-dmarc`, con APScheduler (`start_scheduler()` en `app.py`) — corre una vez al arrancar y después cada `RECHECK_DOMAINS_INTERVAL_HOURS` horas (default 12). No hace falta ningún servicio ni variable extra para esto: usa las mismas `DATABASE_URL`/`SMTP_*` de `akila-dmarc`. Requiere que el servicio corra una sola instancia (sin réplicas), o el job se dispararía duplicado.
 
 Ver el plan completo de esta funcionalidad (infraestructura de correo, DNS, y las 8 fases) en `AGENTS.md`.
 

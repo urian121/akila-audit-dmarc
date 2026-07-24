@@ -21,7 +21,7 @@
 * `services/pdf_service.py` — generación de PDF (ReportLab).
 * `utils/` — helpers puros (`domain_validation.py`, `formatting.py`, `dmarc_builder.py`).
 * `models/` — `db = SQLAlchemy()`, modelos en `monitoring.py`/`user.py`. Persistencia en Postgres.
-* `jobs/recheck_domains.py` — vigilancia DNS periódica (Railway Cron).
+* `jobs/recheck_domains.py` — vigilancia DNS periódica, programada con APScheduler dentro del mismo proceso web (`start_scheduler()` en `app.py`), no un Railway Cron aparte.
 
 ## Frontend
 
@@ -50,7 +50,7 @@
 
 ## Monitoreo continuo de DMARC
 
-* **Vigilancia DNS** (`jobs/recheck_domains.py`): compara contra el último `DomainSnapshot`, genera `Alert` si cambió política DMARC/SPF/selectores DKIM.
+* **Vigilancia DNS** (`jobs/recheck_domains.py`): compara contra el último `DomainSnapshot`, genera `Alert` si cambió política DMARC/SPF/selectores DKIM. Se dispara sola vía `start_scheduler()` (APScheduler, `BackgroundScheduler`) desde `app.py` — cada `RECHECK_DOMAINS_INTERVAL_HOURS` horas (default 12), corriendo dentro del mismo proceso web, no como servicio/cron aparte. Sólo arranca en `if __name__ == "__main__"` (nunca al importar `app` para tests) y sólo una vez si el reloader de Flask está activo (`WERKZEUG_RUN_MAIN`). **Requiere una sola instancia** del servicio — con réplicas, el job correría duplicado una vez por instancia.
 * **Vigilancia de tráfico real** (`services/reports_service.py`): ingiere reportes agregados vía [parsedmarc](https://github.com/domainaware/parsedmarc) (webhook), compara remitentes reales contra el SPF declarado, genera `Alert` tipo `unknown_sender`.
 * `detect_unknown_senders()`: comparar tanto substring directo (nombres de ASN cortos) como la palabra clave del dominio base del target vs. las palabras del nombre de organización (nombres largos no son substring literal) — evita falsos positivos ya vistos en producción.
 * `Alert.kind_label`/`KIND_LABELS` (`models/monitoring.py`): un `kind` nuevo necesita su entrada ahí o se muestra crudo en inglés.
