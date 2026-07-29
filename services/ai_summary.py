@@ -64,15 +64,9 @@ def generate_summary(domain, cards):
     if client is None:
         return None
 
-    model = (
-        os.environ.get("OPENAI_ANALYSIS_MODEL")
-        or os.environ.get("OPENAI_MODEL")
-        or DEFAULT_MODEL
-    )
-
     try:
         response = client.chat.completions.create(
-            model=model,
+            model=DEFAULT_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": _build_prompt(domain, cards)},

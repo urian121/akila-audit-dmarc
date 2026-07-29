@@ -11,6 +11,7 @@ from services.ai_summary import generate_summary
 from services.auth_service import authenticate, register_user, update_email, update_password
 from services.card_builder import DMARC_POLICY_LABELS, build_cards, build_risks, build_summary
 from services.checkdmarc_service import build_dns_screen_data, run_check
+from services.domain_health_analysis import generate_health_analysis
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
 from services.monitoring_service import get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_report_breakdown, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
@@ -471,6 +472,29 @@ def trends_protocol_status(access_token):
         print(f"[trends_protocol_status] no se pudo chequear el DNS de {monitored.domain}: {error}")
         protocol_cards = None
     return render_template("partials/protocol_status.html", protocol_cards=protocol_cards)
+
+
+@app.route("/tendencias/<access_token>/analisis-ia", methods=["GET"])
+@login_required
+def trends_ai_analysis(access_token):
+    """Fragmento htmx: análisis de salud DMARC generado por IA (services/domain_health_analysis.py),
+    a partir de los mismos datos ya calculados en trends_domain — no repite el chequeo de DNS en vivo,
+    ese ya se carga aparte en trends_protocol_status. Cargado en su propia petición para no sumarle
+    la latencia de la IA a la carga inicial de la página."""
+    monitored = get_domain_by_token(access_token)
+    if not monitored or monitored.user_id != current_user.id:
+        abort(404)
+    rango = request.args.get("rango", "30d")
+    if rango not in TRENDS_RANGE_DAYS:
+        rango = "30d"
+    days = TRENDS_RANGE_DAYS[rango]
+    trend_data = get_trends_data(monitored, days)
+    impact = get_impact_analysis(monitored, days)
+    report_breakdown = get_report_breakdown(monitored, days)
+    analysis = None
+    if trend_data["has_data"]:
+        analysis = generate_health_analysis(monitored, trend_data, impact, report_breakdown)
+    return render_template("partials/ai_health_analysis.html", analysis=analysis, monitored=monitored)
 
 
 @app.route("/monitoreo/<access_token>", methods=["GET"])

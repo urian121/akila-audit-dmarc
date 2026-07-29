@@ -1,0 +1,122 @@
+{% if not analysis %}
+  <div class="bg-white rounded-md p-6 mb-6">
+    <h2 class="flex items-center gap-1.5 text-xs tracking-[0.15em] text-zinc-500 uppercase mb-2">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-7 h-7 shrink-0">
+        <defs>
+          <linearGradient id="ai-sparkle-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#4285F4"></stop>
+            <stop offset="50%" stop-color="#9168C0"></stop>
+            <stop offset="100%" stop-color="#D96570"></stop>
+          </linearGradient>
+        </defs>
+        <path fill="url(#ai-sparkle-gradient)" d="M12 2l1.9 5.8L20 9.5l-6.1 1.7L12 17l-1.9-5.8L4 9.5l6.1-1.7L12 2z"></path>
+      </svg>
+      Análisis de salud (IA)
+    </h2>
+    <p class="text-[12px] text-zinc-400">No se pudo generar el análisis en este momento (o todavía no hay suficientes reportes) — el resto de la página sigue funcionando igual.</p>
+  </div>
+{% else %}
+  {% set verdict_colors = {
+    'excelente': ('text-emerald-600', '#10b981'),
+    'bueno': ('text-emerald-600', '#10b981'),
+    'regular': ('text-amber-600', '#f59e0b'),
+    'malo': ('text-rose-600', '#f43f5e'),
+  } %}
+  {% set vcolor = verdict_colors.get(analysis.verdict, ('text-zinc-600', '#94a3b8')) %}
+  <div class="bg-white rounded-md p-6 mb-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="flex items-center gap-1.5 text-xs tracking-[0.15em] text-zinc-500 uppercase">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-7 h-7 shrink-0">
+          <defs>
+            <linearGradient id="ai-sparkle-gradient-2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#4285F4"></stop>
+              <stop offset="50%" stop-color="#9168C0"></stop>
+              <stop offset="100%" stop-color="#D96570"></stop>
+            </linearGradient>
+          </defs>
+          <path fill="url(#ai-sparkle-gradient-2)" d="M12 2l1.9 5.8L20 9.5l-6.1 1.7L12 17l-1.9-5.8L4 9.5l6.1-1.7L12 2z"></path>
+        </svg>
+        Análisis de salud (IA)
+      </h2>
+      <span class="text-[10px] text-zinc-400 uppercase tracking-wide">{{ monitored.domain }}</span>
+    </div>
+
+    <div class="flex flex-col sm:flex-row items-center gap-6 mb-6">
+      <div class="relative w-32 h-32 shrink-0">
+        <canvas id="health-score-chart" data-score="{{ analysis.health_score }}" data-color="{{ vcolor[1] }}"></canvas>
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <span class="text-3xl font-semibold {{ vcolor[0] }}">{{ analysis.health_score }}</span>
+          <span class="text-[9px] text-zinc-400 uppercase tracking-wide">/ 100</span>
+        </div>
+      </div>
+      <div class="flex-1 text-center sm:text-left">
+        <p class="text-sm font-semibold {{ vcolor[0] }} uppercase tracking-wide mb-1">{{ analysis.verdict }}</p>
+        <p class="text-[13px] text-zinc-600 leading-relaxed">{{ analysis.summary }}</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+      <div>
+        <h3 class="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide mb-2">Lo que está bien</h3>
+        <ul class="space-y-1.5">
+          {% for item in analysis.strengths %}
+            <li class="text-[12px] text-zinc-600 leading-snug flex gap-1.5">
+              <span class="text-emerald-500 shrink-0">✓</span> {{ item }}
+            </li>
+          {% else %}
+            <li class="text-[12px] text-zinc-400">—</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <h3 class="text-[11px] font-semibold text-amber-700 uppercase tracking-wide mb-2">Necesita atención</h3>
+        <ul class="space-y-1.5">
+          {% for item in analysis.needs_attention %}
+            <li class="text-[12px] text-zinc-600 leading-snug flex gap-1.5">
+              <span class="text-amber-500 shrink-0">!</span> {{ item }}
+            </li>
+          {% else %}
+            <li class="text-[12px] text-zinc-400">—</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <h3 class="text-[11px] font-semibold text-rose-700 uppercase tracking-wide mb-2">Crítico</h3>
+        <ul class="space-y-1.5">
+          {% for item in analysis.critical %}
+            <li class="text-[12px] text-zinc-600 leading-snug flex gap-1.5">
+              <span class="text-rose-500 shrink-0">✕</span> {{ item }}
+            </li>
+          {% else %}
+            <li class="text-[12px] text-zinc-400">Nada crítico por ahora.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const canvas = document.getElementById('health-score-chart');
+      if (!canvas || typeof Chart === 'undefined') return;
+      const score = Number(canvas.dataset.score);
+      const color = canvas.dataset.color;
+      new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+          datasets: [{
+            data: [score, 100 - score],
+            backgroundColor: [color, '#f4f4f5'],
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '75%',
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        },
+      });
+    })();
+  </script>
+{% endif %}

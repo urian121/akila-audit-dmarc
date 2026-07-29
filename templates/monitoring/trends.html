@@ -63,6 +63,29 @@
             <p class="text-sm text-zinc-500">Todavía no llegó ningún reporte DMARC de <strong class="text-zinc-700">{{ monitored.domain }}</strong> en este rango.</p>
           </div>
         {% else %}
+          <div
+            id="ai-health-analysis"
+            hx-get="{{ url_for('trends_ai_analysis', access_token=monitored.access_token, rango=rango) }}"
+            hx-trigger="load"
+            hx-swap="outerHTML"
+            class="bg-white rounded-md p-6 mb-6"
+          >
+            <h2 class="flex items-center gap-1.5 text-xs tracking-[0.15em] text-zinc-500 uppercase mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-7 h-7 shrink-0">
+                <defs>
+                  <linearGradient id="ai-sparkle-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#4285F4"></stop>
+                    <stop offset="50%" stop-color="#9168C0"></stop>
+                    <stop offset="100%" stop-color="#D96570"></stop>
+                  </linearGradient>
+                </defs>
+                <path fill="url(#ai-sparkle-gradient)" d="M12 2l1.9 5.8L20 9.5l-6.1 1.7L12 17l-1.9-5.8L4 9.5l6.1-1.7L12 2z"></path>
+              </svg>
+              Análisis de salud (IA)
+            </h2>
+            <p class="text-[11px] text-zinc-400">Analizando la salud DMARC del dominio…</p>
+          </div>
+
           <div class="bg-white rounded-md p-6 mb-6">
             <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1">Estado actual</h2>
             <p class="text-[11px] text-zinc-500 mb-5">Trayectoria de aplicación de la política DMARC de <strong class="text-zinc-700">{{ monitored.domain }}</strong></p>
