@@ -420,17 +420,20 @@ def dmarc_report_detail(report_id):
 @app.route("/tendencias", methods=["GET"])
 @login_required
 def trends():
-    """Redirige a las tendencias del primer dominio monitoreado del usuario, o muestra el estado vacío si no tiene ninguno."""
-    domains = list_domains(current_user.id)
-    if not domains:
-        return render_template("monitoring/trends.html", domains=[], monitored=None)
-    return redirect(url_for("trends_domain", access_token=domains[0].access_token))
+    """Muestra el selector de dominio sin cargar ninguno por defecto — antes redirigía directo a un
+    dominio (con sus queries de reportes + chequeo de DNS), lo que hacía sentir lenta la sola entrada
+    al link del sidebar. Elegir un dominio queda en manos del usuario."""
+    return render_template("monitoring/trends.html", domains=list_domains(current_user.id), monitored=None)
 
 
 @app.route("/tendencias/<access_token>", methods=["GET"])
 @login_required
 def trends_domain(access_token):
-    """Página de tendencias (tasa de cumplimiento + volumen pass/fail) de un dominio monitoreado del usuario logueado."""
+    """Página de tendencias (tasa de cumplimiento + volumen pass/fail) de un dominio monitoreado del usuario logueado.
+
+    El estado del protocolo (chequeo de DNS en vivo) NO se calcula acá — se carga aparte vía htmx
+    (trends_protocol_status) para no bloquear esta página con una consulta de DNS que puede tardar
+    varios segundos; antes hacía que todo /tendencias se sintiera lento."""
     monitored = get_domain_by_token(access_token)
     if not monitored or monitored.user_id != current_user.id:
         abort(404)
@@ -442,13 +445,6 @@ def trends_domain(access_token):
     report_breakdown = get_report_breakdown(monitored, TRENDS_RANGE_DAYS[rango])
     impact = get_impact_analysis(monitored, TRENDS_RANGE_DAYS[rango])
     impact["current_policy_label"] = DMARC_POLICY_LABELS.get(impact["current_policy"], (impact["current_policy"] or "Desconocida", None))[0]
-    try:
-        # Chequeo en vivo de DNS (mismo pipeline que el checker de "/") — igual que el resumen con IA,
-        # es 100% opcional: si falla o tarda, el resto de la página de Tendencias sigue funcionando igual.
-        protocol_cards = build_cards(run_check(monitored.domain))
-    except Exception as error:
-        print(f"[trends_domain] no se pudo chequear el DNS de {monitored.domain}: {error}")
-        protocol_cards = None
     return render_template(
         "monitoring/trends.html",
         domains=list_domains(current_user.id),
@@ -457,9 +453,24 @@ def trends_domain(access_token):
         trend_data=trend_data,
         impact=impact,
         policy_label=policy_label,
-        protocol_cards=protocol_cards,
         report_breakdown=report_breakdown,
     )
+
+
+@app.route("/tendencias/<access_token>/protocolo", methods=["GET"])
+@login_required
+def trends_protocol_status(access_token):
+    """Fragmento htmx: chequeo de DNS en vivo (mismo pipeline que el checker de '/'), cargado aparte
+    de trends_domain para no bloquear la carga inicial de Tendencias con una consulta de DNS lenta."""
+    monitored = get_domain_by_token(access_token)
+    if not monitored or monitored.user_id != current_user.id:
+        abort(404)
+    try:
+        protocol_cards = build_cards(run_check(monitored.domain))
+    except Exception as error:
+        print(f"[trends_protocol_status] no se pudo chequear el DNS de {monitored.domain}: {error}")
+        protocol_cards = None
+    return render_template("partials/protocol_status.html", protocol_cards=protocol_cards)
 
 
 @app.route("/monitoreo/<access_token>", methods=["GET"])
