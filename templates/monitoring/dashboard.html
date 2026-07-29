@@ -110,23 +110,57 @@
         Volumen y cumplimiento agrupado por el dominio real que aparece en el "De:" de cada correo — no siempre es
         el dominio raíz, útil para ver si un subdominio (ej. facturación, marketing) está peor configurado que el resto.
       </p>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {% for item in subdomain_breakdown %}
           {% set tier = 'ok' if item.compliance_rate >= 95 else ('warn' if item.compliance_rate >= 80 else 'fail') %}
-          <div class="rise bg-white rounded-md p-4 border-l-4 {{ 'border-emerald-400' if tier == 'ok' else ('border-amber-400' if tier == 'warn' else 'border-rose-400') }}">
-            <p class="text-[13px] text-zinc-800 font-medium mb-1">{{ item.name }}</p>
+          <div class="rise flex flex-col items-center text-center bg-white rounded-md p-6 border-t-4 {{ 'border-emerald-400' if tier == 'ok' else ('border-amber-400' if tier == 'warn' else 'border-rose-400') }}">
+            <div class="relative w-36 h-36 mb-4">
+              <canvas class="subdomain-chart" data-pass="{{ item.pass }}" data-fail="{{ item.fail }}"></canvas>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-2xl font-semibold {{ 'text-emerald-600' if tier == 'ok' else ('text-amber-600' if tier == 'warn' else 'text-rose-600') }}">{{ item.compliance_rate }}%</span>
+                <span class="text-[9px] text-zinc-400 uppercase tracking-wide mt-0.5">cumplimiento</span>
+              </div>
+            </div>
+            <p class="text-[14px] text-zinc-800 font-medium mb-1 max-w-full truncate">{{ item.name }}</p>
             <p class="text-[11px] text-zinc-500 mb-2">
               {{ 'Buen cumplimiento' if tier == 'ok' else ('Cumplimiento parcial' if tier == 'warn' else 'Requiere atención') }}
             </p>
-            <div class="flex items-center gap-2 text-[12px]">
-              <span class="font-semibold {{ 'text-emerald-700' if tier == 'ok' else ('text-amber-700' if tier == 'warn' else 'text-rose-700') }}">{{ item.compliance_rate }}%</span>
-              <span class="text-zinc-400">cumplimiento</span>
-              <span class="text-zinc-300">·</span>
-              <span class="text-zinc-500">{{ item.total }} mensajes</span>
-            </div>
+            <p class="text-[12px] text-zinc-500">{{ '{:,}'.format(item.total).replace(',', '.') }} mensajes</p>
           </div>
         {% endfor %}
       </div>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+      <script>
+        document.querySelectorAll('.subdomain-chart').forEach((canvas) => {
+          const pass = Number(canvas.dataset.pass);
+          const fail = Number(canvas.dataset.fail);
+          new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+              labels: ['Aprobado', 'Fallido'],
+              datasets: [{
+                data: [pass, fail],
+                backgroundColor: ['#10b981', '#f43f5e'],
+                borderColor: '#ffffff',
+                borderWidth: 3,
+              }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              cutout: '72%',
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: (ctx) => `${ctx.label}: ${ctx.parsed} (${(ctx.parsed / (pass + fail) * 100).toFixed(1)}%)`,
+                  },
+                },
+              },
+            },
+          });
+        });
+      </script>
     </div>
     {% endif %}
 

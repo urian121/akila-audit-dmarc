@@ -441,6 +441,13 @@ def trends_domain(access_token):
     policy_label = DMARC_POLICY_LABELS.get(trend_data["dmarc_policy"], (trend_data["dmarc_policy"] or "Desconocida", None))[0]
     impact = get_impact_analysis(monitored, TRENDS_RANGE_DAYS[rango])
     impact["current_policy_label"] = DMARC_POLICY_LABELS.get(impact["current_policy"], (impact["current_policy"] or "Desconocida", None))[0]
+    try:
+        # Chequeo en vivo de DNS (mismo pipeline que el checker de "/") — igual que el resumen con IA,
+        # es 100% opcional: si falla o tarda, el resto de la página de Tendencias sigue funcionando igual.
+        protocol_cards = build_cards(run_check(monitored.domain))
+    except Exception as error:
+        print(f"[trends_domain] no se pudo chequear el DNS de {monitored.domain}: {error}")
+        protocol_cards = None
     return render_template(
         "monitoring/trends.html",
         domains=list_domains(current_user.id),
@@ -449,6 +456,7 @@ def trends_domain(access_token):
         trend_data=trend_data,
         impact=impact,
         policy_label=policy_label,
+        protocol_cards=protocol_cards,
     )
 
 
