@@ -146,6 +146,53 @@ def get_trends_data(monitored, days):
     }
 
 
+def get_report_breakdown(monitored, days):
+    """Arma el desglose para los gráficos extra de Tendencias: organizaciones que reportaron
+    (por volumen, top 5 + 'Otros') y resultados de política SPF/DKIM (pass/fail), de los
+    reportes DMARC agregados de los últimos `days` días.
+
+    No incluye 'auth results' en bruto (pass/fail/softfail/neutral) porque hoy solo guardamos
+    el booleano de alineación (spf_aligned/dkim_aligned, derivado de policy_evaluated) — el
+    valor crudo de auth_results no se captura al ingerir el reporte (reports_service.py)."""
+    cutoff = utcnow() - timedelta(days=days)
+    base = (
+        db.session.query(AggregateRecord)
+        .join(AggregateReport, AggregateRecord.report_id == AggregateReport.id)
+        .filter(AggregateReport.monitored_domain_id == monitored.id, AggregateReport.date_begin >= cutoff)
+    )
+
+    org_rows = (
+        db.session.query(AggregateReport.org_name, func.sum(AggregateRecord.count).label("count"))
+        .join(AggregateRecord, AggregateRecord.report_id == AggregateReport.id)
+        .filter(AggregateReport.monitored_domain_id == monitored.id, AggregateReport.date_begin >= cutoff)
+        .group_by(AggregateReport.org_name)
+        .order_by(func.sum(AggregateRecord.count).desc())
+        .all()
+    )
+    top_orgs = [{"name": r.org_name or "Desconocido", "count": r.count or 0} for r in org_rows[:5]]
+    other_total = sum(r.count or 0 for r in org_rows[5:])
+    if other_total:
+        top_orgs.append({"name": "Otros", "count": other_total})
+
+    spf_pass, spf_fail, dkim_pass, dkim_fail = base.with_entities(
+        func.coalesce(func.sum(case((AggregateRecord.spf_aligned.is_(True), AggregateRecord.count), else_=0)), 0),
+        func.coalesce(func.sum(case((AggregateRecord.spf_aligned.is_(False), AggregateRecord.count), else_=0)), 0),
+        func.coalesce(func.sum(case((AggregateRecord.dkim_aligned.is_(True), AggregateRecord.count), else_=0)), 0),
+        func.coalesce(func.sum(case((AggregateRecord.dkim_aligned.is_(False), AggregateRecord.count), else_=0)), 0),
+    ).one()
+
+    return {
+        "orgs": top_orgs,
+        "has_orgs": bool(top_orgs),
+        "spf_pass": spf_pass,
+        "spf_fail": spf_fail,
+        "has_spf": (spf_pass + spf_fail) > 0,
+        "dkim_pass": dkim_pass,
+        "dkim_fail": dkim_fail,
+        "has_dkim": (dkim_pass + dkim_fail) > 0,
+    }
+
+
 def get_subdomain_breakdown(monitored, days=30):
     """Agrupa el volumen/cumplimiento de los reportes DMARC agregados de los últimos `days` días por
     `header_from` — el dominio o subdominio real que aparece en el "De:" de cada correo, no necesariamente

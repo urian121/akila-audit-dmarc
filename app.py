@@ -13,7 +13,7 @@ from services.card_builder import DMARC_POLICY_LABELS, build_cards, build_risks,
 from services.checkdmarc_service import build_dns_screen_data, run_check
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
-from services.monitoring_service import get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
+from services.monitoring_service import get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_report_breakdown, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
 
@@ -439,6 +439,7 @@ def trends_domain(access_token):
         rango = "30d"
     trend_data = get_trends_data(monitored, TRENDS_RANGE_DAYS[rango])
     policy_label = DMARC_POLICY_LABELS.get(trend_data["dmarc_policy"], (trend_data["dmarc_policy"] or "Desconocida", None))[0]
+    report_breakdown = get_report_breakdown(monitored, TRENDS_RANGE_DAYS[rango])
     impact = get_impact_analysis(monitored, TRENDS_RANGE_DAYS[rango])
     impact["current_policy_label"] = DMARC_POLICY_LABELS.get(impact["current_policy"], (impact["current_policy"] or "Desconocida", None))[0]
     try:
@@ -457,6 +458,7 @@ def trends_domain(access_token):
         impact=impact,
         policy_label=policy_label,
         protocol_cards=protocol_cards,
+        report_breakdown=report_breakdown,
     )
 
 

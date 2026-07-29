@@ -134,6 +134,35 @@
             </div>
           </div>
 
+          {% if report_breakdown.has_orgs or report_breakdown.has_spf or report_breakdown.has_dkim %}
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+              {% if report_breakdown.has_orgs %}
+                <div class="bg-white rounded-md p-6">
+                  <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-4">Organizaciones reportantes</h2>
+                  <div class="relative h-56 sm:h-64">
+                    <canvas id="orgs-chart" role="img" aria-label="Volumen de correo por organización que reportó"></canvas>
+                  </div>
+                </div>
+              {% endif %}
+              {% if report_breakdown.has_spf %}
+                <div class="bg-white rounded-md p-6">
+                  <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-4">Resultados de política SPF</h2>
+                  <div class="relative h-56 sm:h-64">
+                    <canvas id="spf-chart" role="img" aria-label="Proporción de correo que alineó SPF"></canvas>
+                  </div>
+                </div>
+              {% endif %}
+              {% if report_breakdown.has_dkim %}
+                <div class="bg-white rounded-md p-6">
+                  <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-4">Resultados de política DKIM</h2>
+                  <div class="relative h-56 sm:h-64">
+                    <canvas id="dkim-chart" role="img" aria-label="Proporción de correo que alineó DKIM"></canvas>
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+
           <div class="bg-white rounded-md p-6 mb-6">
             <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1">Análisis de impacto</h2>
             <p class="text-[11px] text-zinc-500 mb-4">
@@ -274,6 +303,63 @@
             },
           },
         });
+
+        const orgsChartEl = document.getElementById('orgs-chart');
+        if (orgsChartEl) {
+          const orgLabels = {{ (report_breakdown.orgs | map(attribute='name') | list) | tojson }};
+          const orgCounts = {{ (report_breakdown.orgs | map(attribute='count') | list) | tojson }};
+          const orgColors = ['#2d2147', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#94a3b8'];
+          new Chart(orgsChartEl, {
+            type: 'pie',
+            data: {
+              labels: orgLabels,
+              datasets: [{ data: orgCounts, backgroundColor: orgColors, borderColor: '#ffffff', borderWidth: 2 }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'bottom', labels: { color: '#52525b', boxWidth: 10, boxHeight: 10, font: { size: 10 } } },
+              },
+            },
+          });
+        }
+
+        const spfChartEl = document.getElementById('spf-chart');
+        if (spfChartEl) {
+          const spfPass = {{ report_breakdown.spf_pass | tojson }};
+          const spfFail = {{ report_breakdown.spf_fail | tojson }};
+          new Chart(spfChartEl, {
+            type: 'pie',
+            data: {
+              labels: ['pass', 'fail'],
+              datasets: [{ data: [spfPass, spfFail], backgroundColor: ['#10b981', '#f43f5e'], borderColor: '#ffffff', borderWidth: 2 }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { position: 'bottom', labels: { color: '#52525b', boxWidth: 10, boxHeight: 10, font: { size: 11 } } } },
+            },
+          });
+        }
+
+        const dkimChartEl = document.getElementById('dkim-chart');
+        if (dkimChartEl) {
+          const dkimPass = {{ report_breakdown.dkim_pass | tojson }};
+          const dkimFail = {{ report_breakdown.dkim_fail | tojson }};
+          new Chart(dkimChartEl, {
+            type: 'pie',
+            data: {
+              labels: ['pass', 'fail'],
+              datasets: [{ data: [dkimPass, dkimFail], backgroundColor: ['#10b981', '#f43f5e'], borderColor: '#ffffff', borderWidth: 2 }],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { position: 'bottom', labels: { color: '#52525b', boxWidth: 10, boxHeight: 10, font: { size: 11 } } } },
+            },
+          });
+        }
       });
     </script>
   {% endif %}

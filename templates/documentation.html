@@ -102,6 +102,18 @@
         </div>
 
         <div class="bg-white rounded-md p-4">
+          <h3 class="text-[13px] font-semibold text-zinc-800 mb-1">fo (opciones de reporte de fallos)</h3>
+          <p class="text-[12px] text-zinc-500 leading-relaxed">Define cuándo se manda un reporte forense a <code class="text-zinc-700">ruf=</code>. <strong class="text-zinc-700">fo=0</strong> (el default): solo si el correo falló SPF <em>y</em> DKIM a la vez. <strong class="text-zinc-700">fo=1</strong>: si falló cualquiera de los dos. También existen <strong class="text-zinc-700">d</strong> (solo DKIM) y <strong class="text-zinc-700">s</strong> (solo SPF).</p>
+          <p class="text-[11px] text-zinc-400 leading-relaxed mt-2">No lo generamos en esta herramienta: los reportes forenses incluyen contenido real del correo que falló, y por eso Gmail, Yahoo y Microsoft ya no los mandan — su cobertura hoy es muy baja sin importar qué valor de <code class="text-zinc-500">fo=</code> uses.</p>
+        </div>
+
+        <div class="bg-white rounded-md p-4">
+          <h3 class="text-[13px] font-semibold text-zinc-800 mb-1">rf (formato de reporte)</h3>
+          <p class="text-[12px] text-zinc-500 leading-relaxed">El formato en que se arma el reporte forense de <code class="text-zinc-700">ruf=</code>. Hoy el único estándar que existe en la práctica es <strong class="text-zinc-700">rf=afrf</strong>.</p>
+          <p class="text-[11px] text-zinc-400 leading-relaxed mt-2">No lo generamos en esta herramienta: al no haber otro formato entre el cual elegir, y ser además el valor por defecto, escribirlo explícito no cambia nada para quien recibe el correo — es idéntico a omitirlo.</p>
+        </div>
+
+        <div class="bg-white rounded-md p-4">
           <h3 class="text-[13px] font-semibold text-zinc-800 mb-1">DNSSEC</h3>
           <p class="text-[12px] text-zinc-500 leading-relaxed">Firma criptográficamente las respuestas de DNS de tu dominio, para que nadie pueda falsificarlas en el camino. Se activa desde tu proveedor de DNS, no es un registro que se publique a mano.</p>
         </div>
