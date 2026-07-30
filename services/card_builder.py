@@ -84,15 +84,19 @@ SPF_ALL_LABELS = {
     "fail": "Los demás servidores son rechazados (-all) — la opción más estricta.",
 }
 
-# Cómo describir cada tipo de mecanismo SPF en lenguaje simple.
+# Cómo describir cada tipo de mecanismo SPF en lenguaje simple — (prefijo, valor a resaltar o
+# None, sufijo). El valor (el hostname/IP real) se resalta aparte en la tarjeta; prefijo/sufijo
+# son el texto plano alrededor.
 SPF_MECHANISM_LABELS = {
-    "include": lambda value: f"{value} puede enviar correos en nombre de este dominio.",
-    "ip4": lambda value: f"El rango de IPs {value} puede enviar correos.",
-    "ip6": lambda value: f"El rango de IPs {value} puede enviar correos.",
-    "a": lambda value: f"El servidor del registro A {('(' + value + ')') if value else 'de este dominio'} puede enviar correos.",
-    "mx": lambda value: f"Los servidores de correo (MX) {('de ' + value) if value else 'de este dominio'} pueden enviar correos.",
-    "exists": lambda value: f"Se valida mediante una consulta a {value}.",
-    "ptr": lambda _value: "Se valida mediante DNS inverso (PTR) — mecanismo obsoleto, poco recomendado.",
+    "include": lambda value: ("", value, " puede enviar correos en nombre de este dominio."),
+    "ip4": lambda value: ("El rango de IPs ", value, " puede enviar correos."),
+    "ip6": lambda value: ("El rango de IPs ", value, " puede enviar correos."),
+    "a": lambda value: ("El servidor del registro A ", value, " puede enviar correos.") if value
+        else ("", None, "El servidor del registro A de este dominio puede enviar correos."),
+    "mx": lambda value: ("Los servidores de correo (MX) de ", value, " pueden enviar correos.") if value
+        else ("", None, "Los servidores de correo (MX) de este dominio pueden enviar correos."),
+    "exists": lambda value: ("Se valida mediante una consulta a ", value, "."),
+    "ptr": lambda _value: ("", None, "Se valida mediante DNS inverso (PTR) — mecanismo obsoleto, poco recomendado."),
 }
 
 
@@ -226,22 +230,28 @@ def spf_card(section):
         return base_card("SPF", status, "spf", has_record=False, message=friendly_error_message(section["error"]))
 
     parsed = section.get("parsed") or {}
-    explanations = []
+    mechanisms = []
     for mechanism in parsed.get("mechanisms") or []:
         kind = mechanism.get("mechanism")
         value = mechanism.get("value") or ""
         describe = SPF_MECHANISM_LABELS.get(kind)
-        explanations.append(describe(value) if describe else f"{kind} {value}".strip())
+        if describe:
+            prefix, highlight, suffix = describe(value)
+        else:
+            prefix, highlight, suffix = "", (value or kind), ""
+        mechanisms.append({"prefix": prefix, "value": highlight, "suffix": suffix})
 
     all_qualifier = parsed.get("all")
+    all_explanation = None
     if all_qualifier:
-        explanations.append(SPF_ALL_LABELS.get(all_qualifier, f"Calificador 'all' desconocido: {all_qualifier}"))
+        all_explanation = SPF_ALL_LABELS.get(all_qualifier, f"Calificador 'all' desconocido: {all_qualifier}")
 
     return base_card(
         "SPF", status, "spf",
         has_record=True,
         record=section.get("record"),
-        explanations=explanations,
+        mechanisms=mechanisms,
+        all_explanation=all_explanation,
         warnings=translate_warnings(section.get("warnings")),
     )
 

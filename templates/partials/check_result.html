@@ -19,7 +19,7 @@
   {% elif card.kind == 'text' %}
     <p class="text-[11px] text-zinc-600">{{ card.text }}</p>
 
-  {% elif card.kind == 'dmarc' or card.kind == 'spf' %}
+  {% elif card.kind == 'dmarc' %}
     {% if card.has_record %}
       <p class="text-[11px] text-emerald-600 mb-2">✔ Este dominio tiene {{ card.title }} configurado.</p>
     {% else %}
@@ -30,6 +30,32 @@
       <ul class="space-y-1 text-[11px] text-zinc-700 list-disc list-inside">
         {% for line in card.explanations %}<li>{{ line }}</li>{% endfor %}
       </ul>
+    {% endif %}
+    {% if card.record %}
+      <pre class="record mt-3 overflow-x-auto text-[11px] text-zinc-600 bg-zinc-50 rounded p-2.5">{{ card.record }}</pre>
+    {% endif %}
+    {% if card.warnings %}
+      <ul class="mt-2 space-y-1 text-[11px] text-amber-700 list-disc list-inside">
+        {% for w in card.warnings %}<li>{{ w }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+
+  {% elif card.kind == 'spf' %}
+    {% if card.has_record %}
+      <p class="text-[11px] text-emerald-600 mb-2">✔ Este dominio tiene SPF configurado.</p>
+    {% else %}
+      <p class="text-[11px] text-rose-600 mb-2">✘ Este dominio NO tiene SPF configurado.</p>
+      {% if card.message %}<p class="text-[11px] text-zinc-500">{{ card.message }}</p>{% endif %}
+    {% endif %}
+    {% if card.mechanisms %}
+      <ul class="space-y-1.5 text-[11px] text-zinc-700 list-disc list-inside">
+        {% for m in card.mechanisms %}
+          <li>{{ m.prefix }}{% if m.value %}<span class="font-mono text-[10.5px] bg-zinc-100 text-zinc-800 rounded px-1 py-0.5">{{ m.value }}</span>{% endif %}{{ m.suffix }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if card.all_explanation %}
+      <p class="text-[11px] text-zinc-600 mt-1.5">{{ card.all_explanation }}</p>
     {% endif %}
     {% if card.record %}
       <pre class="record mt-3 overflow-x-auto text-[11px] text-zinc-600 bg-zinc-50 rounded p-2.5">{{ card.record }}</pre>

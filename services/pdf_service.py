@@ -169,7 +169,7 @@ def _card_content(card, styles, width):
     elif kind == "text":
         elements.append(Paragraph(escape(card.get("text", "")), styles["body"]))
 
-    elif kind in ("dmarc", "spf"):
+    elif kind == "dmarc":
         if card.get("has_record"):
             elements.append(Paragraph(f"Configurado — este dominio tiene {escape(card['title'])} publicado.", _status_style("ok", styles["body"])))
         else:
@@ -179,6 +179,27 @@ def _card_content(card, styles, width):
         bullets = _bullets(card.get("explanations"), styles["body"])
         if bullets:
             elements.append(bullets)
+        if card.get("record"):
+            elements.append(Paragraph(escape(card["record"]), styles["mono"]))
+        warn = _bullets(card.get("warnings"), _status_style("warn", styles["body"]))
+        if warn:
+            elements.append(warn)
+
+    elif kind == "spf":
+        if card.get("has_record"):
+            elements.append(Paragraph("Configurado — este dominio tiene SPF publicado.", _status_style("ok", styles["body"])))
+        else:
+            elements.append(Paragraph("No configurado — este dominio NO tiene SPF publicado.", _status_style("fail", styles["body"])))
+            if card.get("message"):
+                elements.append(Paragraph(escape(card["message"]), styles["muted"]))
+        mechanism_lines = []
+        for m in card.get("mechanisms") or []:
+            highlight = f'<font face="Courier"><b>{escape(m["value"])}</b></font>' if m.get("value") else ""
+            mechanism_lines.append(f"• {escape(m.get('prefix', ''))}{highlight}{escape(m.get('suffix', ''))}")
+        if mechanism_lines:
+            elements.append(Paragraph("<br/>".join(mechanism_lines), styles["body"]))
+        if card.get("all_explanation"):
+            elements.append(Paragraph(escape(card["all_explanation"]), styles["body"]))
         if card.get("record"):
             elements.append(Paragraph(escape(card["record"]), styles["mono"]))
         warn = _bullets(card.get("warnings"), _status_style("warn", styles["body"]))
