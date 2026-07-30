@@ -59,6 +59,7 @@ PROTOCOL_HELP = {
     "DMARC": "Usa los resultados de SPF y DKIM para decidir si aceptar, poner en cuarentena o rechazar un correo, y para generar reportes.",
     "DKIM": "Firma digitalmente los correos para garantizar que no fueron alterados en el camino.",
     "MX": "Indica qué servidores reciben el correo de este dominio.",
+    "DANE": "Ata el certificado TLS de tus servidores de correo a un registro DNS (TLSA), firmado con DNSSEC, para evitar que alguien intercepte la conexión con un certificado falso.",
     "MTA-STS": "Obliga a que el correo entrante se transporte siempre por una conexión cifrada (TLS).",
     "TLS-RPT": "Recibe reportes cuando falla el cifrado TLS al entregar correo a este dominio.",
     "BIMI": "Muestra el logo de la marca junto al correo, si DMARC está en cuarentena o rechazo.",
@@ -301,6 +302,40 @@ def mx_card(section):
     return base_card("MX", status, "mx", hosts=hosts, warnings=translate_warnings(visible_mx_warnings(section)))
 
 
+def dane_status(mx_section):
+    """Estado de DANE a partir de los hosts MX que ya trae mx_card() (mismo `data['mx']`, sin
+    consulta nueva): checkdmarc ya busca el registro TLSA de cada host MX dentro de check_mx() —
+    es una consulta DNS pura (no requiere conectarse por SMTP), así que sí funciona en Windows,
+    a diferencia de starttls/tls. Un host con TLSA pero sin DNSSEC válido es 'fail' (el TLSA no se
+    puede confiar sin DNSSEC, es peor que no tener nada porque da una falsa sensación de seguridad);
+    ningún host con TLSA, o solo algunos (rollout parcial), es 'warn' — es opcional."""
+    if not mx_section or mx_section.get("error"):
+        return "na"
+    hosts = mx_section.get("hosts") or []
+    if not hosts:
+        return "na"
+    hosts_with_tlsa = [h for h in hosts if h.get("tlsa")]
+    if any(not h.get("dnssec") for h in hosts_with_tlsa):
+        return "fail"
+    if not hosts_with_tlsa or len(hosts_with_tlsa) < len(hosts):
+        return "warn"
+    return "ok"
+
+
+def dane_card(mx_section):
+    """Construye la tarjeta de DANE — ver dane_status() para la lógica de estado."""
+    status = dane_status(mx_section)
+    hosts = [
+        {
+            "hostname": h.get("hostname", "?"),
+            "has_tlsa": bool(h.get("tlsa")),
+            "dnssec": bool(h.get("dnssec")),
+        }
+        for h in (mx_section or {}).get("hosts") or []
+    ]
+    return base_card("DANE", status, "dane", hosts=hosts)
+
+
 def dkim_status(entries):
     """Calcula el estado global de DKIM a partir de la lista de selectores probados."""
     if not entries:
@@ -337,6 +372,8 @@ RISK_MITIGATIONS = {
     ("DKIM", "warn"): "No se encontró DKIM en los selectores más comunes — confirma con tu proveedor cuál selector usa y agrégalo a la búsqueda.",
     ("MX", "fail"): "Revisa tu registro MX — sin uno válido no se puede recibir correo en este dominio.",
     ("MX", "warn"): "Revisa la advertencia de tus servidores MX con tu proveedor de correo.",
+    ("DANE", "fail"): "Alguno de tus servidores de correo publica un registro TLSA sin DNSSEC válido — sin DNSSEC no se puede confiar en ese TLSA. Revisa la firma DNSSEC de ese host o quita el TLSA hasta activarla.",
+    ("DANE", "warn"): "Opcional: publica un registro TLSA (con DNSSEC activo) en tus servidores de correo para atar su certificado TLS y evitar ataques de intermediario al recibir correo.",
     ("MTA-STS", "warn"): "Opcional: publica MTA-STS para forzar que el correo entrante siempre viaje cifrado.",
     ("TLS-RPT", "warn"): "Opcional: publica TLS-RPT para que te avisen si falla el cifrado del correo entrante.",
     ("BIMI", "warn"): "Opcional: BIMI muestra el logo de tu marca junto al correo, pero primero necesitas DMARC en cuarentena o rechazo.",
@@ -351,7 +388,7 @@ RISK_SEVERITY = {
 }
 RISK_SEVERITY_SOFT_WARN = ("Baja", "border-zinc-200 text-zinc-500 bg-zinc-100")
 SEVERITY_RANK = {"Alta": 0, "Media": 1, "Baja": 2}
-SOFT_ABSENCE_TITLES = ("MTA-STS", "TLS-RPT", "BIMI")
+SOFT_ABSENCE_TITLES = ("MTA-STS", "TLS-RPT", "BIMI", "DANE")
 
 
 def _tls_rpt_example(domain):
@@ -402,6 +439,7 @@ def build_cards(data):
         dmarc_card(data.get("dmarc")),
         dkim_card(data.get("dkim")),
         mx_card(data.get("mx")),
+        dane_card(data.get("mx")),
         record_card("MTA-STS", data.get("mta_sts"), soft_absence=True),
         record_card("TLS-RPT", data.get("smtp_tls_reporting"), soft_absence=True),
         record_card("BIMI", data.get("bimi"), soft_absence=True),
@@ -422,6 +460,14 @@ def build_summary(data):
             fail += 1
 
     s = mx_status(data.get("mx"))
+    if s == "ok":
+        ok += 1
+    elif s == "warn":
+        warn += 1
+    elif s == "fail":
+        fail += 1
+
+    s = dane_status(data.get("mx"))
     if s == "ok":
         ok += 1
     elif s == "warn":

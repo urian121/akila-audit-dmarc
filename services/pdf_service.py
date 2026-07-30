@@ -229,6 +229,19 @@ def _card_content(card, styles, width):
         if warn:
             elements.append(warn)
 
+    elif kind == "dane":
+        hosts = card.get("hosts") or []
+        if hosts:
+            for host in hosts:
+                flags = ", ".join(
+                    f'<font color="{_hex(STATUS_COLORS["ok"])}">{escape(name)}</font>' if value
+                    else f'<font color="{_hex(FAINT)}">{escape(name)}</font>'
+                    for name, value in [("tlsa", host["has_tlsa"]), ("dnssec", host["dnssec"])]
+                )
+                elements.append(Paragraph(f"{escape(host['hostname'])} — {flags}", styles["body"]))
+        else:
+            elements.append(Paragraph("sin registros MX", styles["muted"]))
+
     elif kind == "dkim":
         found = card.get("found") or []
         if found:

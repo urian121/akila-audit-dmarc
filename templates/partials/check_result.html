@@ -122,6 +122,21 @@
       </ul>
     {% endif %}
 
+  {% elif card.kind == 'dane' %}
+    <div class="mt-1">
+      {% for h in card.hosts %}
+        <div class="flex items-center justify-between gap-2 py-1 border-b border-zinc-100 last:border-0">
+          <span class="text-[11px] text-zinc-700 truncate">{{ h.hostname }}</span>
+          <span class="flex gap-1 shrink-0">
+            <span class="text-[10px] px-1.5 py-0.5 rounded {{ 'border border-emerald-200 text-emerald-700' if h.has_tlsa else 'bg-zinc-100 text-zinc-400' }}">tlsa</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded {{ 'border border-emerald-200 text-emerald-700' if h.dnssec else 'bg-zinc-100 text-zinc-400' }}">dnssec</span>
+          </span>
+        </div>
+      {% else %}
+        <p class="text-[11px] text-zinc-400">sin registros MX</p>
+      {% endfor %}
+    </div>
+
   {% elif card.kind == 'dkim' %}
     {% if card.found %}
       <p class="text-[11px] text-emerald-600 mb-2">✔ Este dominio tiene al menos un selector DKIM publicado.</p>
