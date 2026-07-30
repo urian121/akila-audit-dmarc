@@ -17,7 +17,17 @@
   integrity="sha384-H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
   crossorigin="anonymous"
 ></script>
+<script src="https://unpkg.com/nextjs-toast-notify@1.62.0/dist/nextjs-toast-notify.min.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}" />
+{% if error %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    showToast.error({{ error | tojson }}, {
+      duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+    });
+  });
+</script>
+{% endif %}
 </head>
 <body class="min-h-screen font-jakarta auth-page text-zinc-700 antialiased">
 
@@ -40,10 +50,6 @@
       <div class="w-full px-8 py-16">
         <h1 class="text-2xl text-zinc-900 tracking-tight mb-1">Bienvenido</h1>
         <p class="text-sm text-zinc-500 mb-8">Inicia sesión para continuar</p>
-
-        {% if error %}
-          <p class="mb-4 text-xs text-rose-600">{{ error }}</p>
-        {% endif %}
 
         <form
           method="POST"

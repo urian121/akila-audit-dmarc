@@ -8,9 +8,19 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="bg-white rounded-md p-4">
         <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-3">Datos de la cuenta</h2>
-        {% if email_error %}<p class="mb-3 text-xs text-rose-600">{{ email_error }}</p>{% endif %}
-        {% if email_success %}<p class="mb-3 text-xs text-emerald-600">{{ email_success }}</p>{% endif %}
         <form method="POST" action="{{ url_for('account_update_email') }}" autocomplete="off" class="flex flex-col gap-3">
+          <div>
+            <label class="block mb-1.5 text-[10px] tracking-wide uppercase text-zinc-500">
+              Nombre <span class="text-[#2d2147]">*</span>
+            </label>
+            <input
+              type="text"
+              name="name"
+              required
+              value="{{ current_user.name or '' }}"
+              class="w-full bg-white rounded-md px-4 py-3 text-sm text-zinc-900 outline-none border border-zinc-200 focus:border-[#2d2147]/60 transition-colors"
+            />
+          </div>
           <div>
             <label class="block mb-1.5 text-[10px] tracking-wide uppercase text-zinc-500">
               Correo electrónico <span class="text-[#2d2147]">*</span>
@@ -35,13 +45,10 @@
             Guardar correo
           </button>
         </form>
-        <p class="mt-4 text-[11px] text-zinc-400">Cuenta creada el {{ current_user.created_at.strftime('%Y-%m-%d') }}.</p>
       </div>
 
       <div class="bg-white rounded-md p-4">
         <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-3">Cambiar contraseña</h2>
-        {% if password_error %}<p class="mb-3 text-xs text-rose-600">{{ password_error }}</p>{% endif %}
-        {% if password_success %}<p class="mb-3 text-xs text-emerald-600">{{ password_success }}</p>{% endif %}
         <form method="POST" action="{{ url_for('account_update_password') }}" autocomplete="off" class="flex flex-col gap-3">
           <div>
             <label class="block mb-1.5 text-[10px] tracking-wide uppercase text-zinc-500">
@@ -80,4 +87,31 @@
       </div>
       </div>
     </div>
+{% endblock %}
+
+{% block head_extra %}
+  {% if email_error or email_success or password_error or password_success %}
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        {% if email_success %}
+          showToast.success({{ email_success | tojson }}, {
+            duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+          });
+        {% elif email_error %}
+          showToast.error({{ email_error | tojson }}, {
+            duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+          });
+        {% endif %}
+        {% if password_success %}
+          showToast.success({{ password_success | tojson }}, {
+            duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+          });
+        {% elif password_error %}
+          showToast.error({{ password_error | tojson }}, {
+            duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+          });
+        {% endif %}
+      });
+    </script>
+  {% endif %}
 {% endblock %}

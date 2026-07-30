@@ -36,6 +36,15 @@
   * Inputs de texto: `border border-zinc-200` en reposo (sin sombra) + `focus:border-[#2d2147]/60` — patrón ya validado, no reintentar `shadow-md` en foco ni `border-transparent` en reposo (ya descartados).
 * Tamaño de letra: el texto chico (`text-[9px]` a `text-[13px]`, `text-xs`/`text-sm`) tiene overrides `!important` en `home.css` (+2px). Un tamaño arbitrario nuevo en ese rango necesita su propia regla ahí o queda más chico que el resto.
 * Pace.js (barra de progreso) en toda página completa: `window.paceOptions` se define antes de cargar `pace.min.js`.
+* **Toasts/alertas**: [nextjs-toast-notify](https://www.nextjstoastnotify.com/) — CDN pinneado a una versión real y confirmada (`unpkg.com/nextjs-toast-notify@1.62.0/...`, verificar con `curl -o /dev/null -w "%{http_code}"` antes de cambiar la versión: una versión que no existe da 404 y `showToast` queda `undefined` sin ningún error visible en la página, solo en la consola del navegador — así se rompió la primera vez). Cargado en `layout.html` (todas las páginas del tema claro) y también en `auth/login.html` (solo para el toast de "credenciales incorrectas") — `auth/register.html` todavía no lo necesita. Toda alerta flotante nueva (éxito, error, advertencia, info) usa esta librería, nunca un `alert()` nativo ni un div armado a mano. API global `showToast.<tipo>(mensaje, opciones)`:
+
+  ```js
+  showToast.success("Dominio registrado — ya podés configurar el DNS.", {
+    duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+  });
+  ```
+
+  Tipos: `success` / `error` / `warning` / `info`. Opciones consistentes en toda la app (no cambiarlas sin razón, para que no se sienta distinto cada toast): `duration: 5000`, `position: "top-right"`, `transition: "swingInverted"`, `icon: ""` (sin ícono default), `sound: true`. Se dispara en un `<script>` dentro de `{% block head_extra %}` de la página destino (nunca inline en el HTML de golpe, para poder condicionarlo con Jinja — ej. solo si `just_registered`), envuelto en `DOMContentLoaded`. Ejemplo real: `templates/monitoring/registered.html` (toast de éxito al registrar un dominio en `/monitoreo`, o de info si el dominio ya existía y solo se reactivó).
 
 ## Checker de un dominio (`/`, `POST /check`, `GET /api/check/<domain>`)
 

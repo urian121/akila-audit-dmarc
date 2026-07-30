@@ -314,3 +314,21 @@
     </a>
     </div>
 {% endblock %}
+
+{% block head_extra %}
+  {% if just_registered %}
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        {% if already_existed %}
+          showToast.info("El dominio ya estaba registrado — se reactivó el monitoreo.", {
+            duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+          });
+        {% else %}
+          showToast.success("Dominio registrado — ya podés configurar el DNS.", {
+            duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+          });
+        {% endif %}
+      });
+    </script>
+  {% endif %}
+{% endblock %}

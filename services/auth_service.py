@@ -1,12 +1,13 @@
 from models import User, db
 
 
-def register_user(email, password):
+def register_user(name, email, password):
     """Crea una cuenta nueva; devuelve (user, error) — error es un string si el correo ya existe."""
+    name = name.strip()
     email = email.strip().lower()
     if User.query.filter_by(email=email).first():
         return None, "Ya existe una cuenta con ese correo."
-    user = User(email=email)
+    user = User(name=name, email=email)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
@@ -21,14 +22,18 @@ def authenticate(email, password):
     return None
 
 
-def update_email(user, new_email):
-    """Actualiza el correo de la cuenta; devuelve (ok, error) — error si el correo no es válido o ya está en uso por otra cuenta."""
+def update_email(user, name, new_email):
+    """Actualiza el nombre y el correo de la cuenta; devuelve (ok, error) — error si falta el nombre, el correo no es válido, o ya está en uso por otra cuenta."""
+    name = (name or "").strip()
     new_email = new_email.strip().lower()
+    if not name:
+        return False, "Ingresa tu nombre."
     if "@" not in new_email:
         return False, "Ingresa un correo válido."
     existing = User.query.filter(User.email == new_email, User.id != user.id).first()
     if existing:
         return False, "Ya existe otra cuenta con ese correo."
+    user.name = name
     user.email = new_email
     db.session.commit()
     return True, None

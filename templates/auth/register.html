@@ -53,6 +53,20 @@
         >
           <div>
             <label class="block mb-1.5 text-[10px] tracking-wide uppercase text-zinc-500">
+              Nombre <span class="text-[#2d2147]">*</span>
+            </label>
+            <input
+              type="text"
+              name="name"
+              required
+              placeholder="Tu nombre"
+              value="{{ name or '' }}"
+              class="w-full bg-white border border-zinc-200 rounded-md px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-[#2d2147]/60 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label class="block mb-1.5 text-[10px] tracking-wide uppercase text-zinc-500">
               Correo electrónico <span class="text-[#2d2147]">*</span>
             </label>
             <input

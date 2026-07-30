@@ -182,8 +182,10 @@
 <div class="rise rounded-md px-4 py-3 bg-white mb-4 break-inside-avoid">
   <div class="flex flex-wrap items-center gap-4 text-xs mb-3">
     <span class="text-zinc-800">{{ result_domain }}</span>
-    <span class="text-zinc-300">/</span>
-    <span class="text-zinc-500">{{ base_domain }}</span>
+    {% if base_domain and base_domain != result_domain %}
+      <span class="text-zinc-300">/</span>
+      <span class="text-zinc-500">{{ base_domain }}</span>
+    {% endif %}
     <span class="ml-auto {{ summary.score_color }} font-semibold">{{ summary.score }}% saludable</span>
   </div>
   <div class="flex w-full h-1.5 rounded-full overflow-hidden bg-zinc-100">

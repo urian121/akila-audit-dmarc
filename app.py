@@ -193,17 +193,20 @@ def auth_register():
     if request.method == "GET":
         return render_template("auth/register.html")
 
+    name = request.form.get("name", "").strip()
     email = request.form.get("email", "").strip()
     password = request.form.get("password", "")
 
+    if not name:
+        return render_template("auth/register.html", error="Ingresa tu nombre.", name=name, email=email)
     if "@" not in email:
-        return render_template("auth/register.html", error="Ingresa un correo válido.", email=email)
+        return render_template("auth/register.html", error="Ingresa un correo válido.", name=name, email=email)
     if len(password) < 8:
-        return render_template("auth/register.html", error="La contraseña debe tener al menos 8 caracteres.", email=email)
+        return render_template("auth/register.html", error="La contraseña debe tener al menos 8 caracteres.", name=name, email=email)
 
-    user, error = register_user(email, password)
+    user, error = register_user(name, email, password)
     if error:
-        return render_template("auth/register.html", error=error, email=email)
+        return render_template("auth/register.html", error=error, name=name, email=email)
 
     login_user(user)
     return redirect(url_for("inicio"))
@@ -246,11 +249,11 @@ def account():
 @app.route("/cuenta/correo", methods=["POST"])
 @login_required
 def account_update_email():
-    """Actualiza el correo de la cuenta logueada."""
-    ok, error = update_email(current_user, request.form.get("email", ""))
+    """Actualiza el nombre y el correo de la cuenta logueada."""
+    ok, error = update_email(current_user, request.form.get("name", ""), request.form.get("email", ""))
     if not ok:
         return render_template("auth/account.html", email_error=error), 400
-    return render_template("auth/account.html", email_success="Correo actualizado.")
+    return render_template("auth/account.html", email_success="Datos actualizados.")
 
 
 @app.route("/cuenta/contrasena", methods=["POST"])
