@@ -535,11 +535,24 @@ def monitoring_dashboard_pdf(access_token):
 
 @app.route("/monitoreo/<access_token>/toggle", methods=["POST"])
 def monitoring_toggle(access_token):
-    """Activa o desactiva el monitoreo de un dominio (no borra su historial) y vuelve al dashboard."""
-    monitored = set_active(access_token, request.form.get("activar") == "1")
+    """htmx: activa o desactiva el monitoreo de un dominio (no borra su historial) y devuelve el
+    fragmento de estado actualizado — no recarga la página. El toast de confirmación se dispara
+    con un <script> dentro del propio fragmento (partials/monitoring_toggle_status.html) — NO por
+    el header HX-Trigger: ese evento se dispara sobre el <form> que hizo la petición, y ese <form>
+    queda desconectado del DOM justo cuando se reemplaza #toggle-status-region (swap outerHTML),
+    así que nunca llega a burbujear hasta un listener en document.body."""
+    activar = request.form.get("activar") == "1"
+    monitored = set_active(access_token, activar)
     if monitored is None:
         return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
-    return redirect(url_for("monitoring_dashboard", access_token=access_token))
+
+    data = get_dashboard_data(access_token)
+    return render_template(
+        "partials/monitoring_toggle_status.html",
+        monitored=monitored, reports=data["reports"],
+        toggle_message=f"Dominio {'activado' if activar else 'desactivado'} correctamente.",
+        toggle_toast_type="success" if activar else "warning",
+    )
 
 
 @app.route("/webhooks/dmarc-aggregate/<secret>", methods=["POST"])

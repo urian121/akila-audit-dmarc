@@ -1,4 +1,10 @@
 ::selection { background: #2d2147; color: #fff; }
+/* Reserva siempre el espacio de la barra de scroll vertical, exista o no —
+   sin esto, una página cuyo contenido cruza la altura de la ventana (ej. el
+   dashboard de un dominio inactivo, con una caja extra) corre unos píxeles
+   los contenedores centrados (mx-auto) respecto a una página más corta que
+   no la necesita, dando la sensación de que el layout "salta" entre estados. */
+html { scrollbar-gutter: stable; }
 body { background-color: #fcfaef; }
 .pace .pace-progress { background: #2d2147; }
 /* Patrón de cuadritos del panel izquierdo de login/register, sobre fondo

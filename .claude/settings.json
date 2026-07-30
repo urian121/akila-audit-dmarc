@@ -11,7 +11,8 @@
       "WebFetch(domain:unpkg.com)",
       "WebFetch(domain:app.unpkg.com)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"https://unpkg.com/nextjs-toast-notify@1.62.0/dist/nextjs-toast-notify.min.js\")",
-      "Bash(python -m py_compile app.py services/auth_service.py models/user.py)"
+      "Bash(python -m py_compile app.py services/auth_service.py models/user.py)",
+      "Bash(sort -t: -k1)"
     ]
   }
 }
