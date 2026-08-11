@@ -70,6 +70,14 @@
       Informes DMARC
     </a>
 
+    <a href="{{ url_for('compliance') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint == 'compliance' else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
+        <path d="M9 12l2 2 4-4"></path>
+        <path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z"></path>
+      </svg>
+      Cumplimiento
+    </a>
+
     <a href="{{ url_for('documentacion') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 mt-4 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint == 'documentacion' else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>

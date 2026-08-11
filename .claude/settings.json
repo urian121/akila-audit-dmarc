@@ -13,7 +13,34 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"https://unpkg.com/nextjs-toast-notify@1.62.0/dist/nextjs-toast-notify.min.js\")",
       "Bash(python -m py_compile app.py services/auth_service.py models/user.py)",
       "Bash(sort -t: -k1)",
-      "Bash(python -m py_compile services/card_builder.py services/pdf_service.py)"
+      "Bash(python -m py_compile services/card_builder.py services/pdf_service.py)",
+      "Bash(grep -v -E \"\\\\.\\(pyc\\)$\")",
+      "Bash(env/Scripts/python.exe -c ' *)",
+      "Bash(chromium-cli --help)",
+      "Bash(env/Scripts/python.exe -m pip list)",
+      "Bash(npx --yes playwright --version)",
+      "Bash(mkdir -p /tmp/pw)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(npx playwright *)",
+      "Bash(cp \"/c/Users/Urian/AppData/Local/Temp/claude/pw/diag.js\" ./diag.js)",
+      "Bash(node diag.js)",
+      "Bash(pwd -W)",
+      "Bash(cygpath -w /tmp/session_cookie.txt)",
+      "Read(//c//**)",
+      "Bash(sed -i \"s#/tmp/session_cookie.txt#C:/Users/Urian/AppData/Local/Temp/session_cookie.txt#; s#/tmp/pw/#C:/Users/Urian/AppData/Local/Temp/pw/#g\" diag.js)",
+      "Bash(time curl -s -o /dev/null -w 'status=%{http_code} tiempo_total=%{time_total}s\\\\n' --cookie session=__CMDSUB_OUTPUT__ http://127.0.0.1:5000/cumplimiento/protocolos)",
+      "Read(//c/Users/Urian/AppData/Local/Temp/claude/pw/**)",
+      "Bash(ls -la /c/Users/Urian/AppData/Local/Temp/pw/*.png)",
+      "Read(//c/Users/Urian/AppData/Local/Temp/pw/**)",
+      "Bash(tasklist //FI \"PID eq 29640\")",
+      "Bash(tasklist //FI \"PID eq 34332\")",
+      "Bash(netstat -ano)",
+      "Bash(curl -s -m 3 -o /dev/null -w \"status=%{http_code}\\\\n\" http://127.0.0.1:5000/ingresar)",
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\" //V)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Urian\\AppData\\Local\\Temp\\claude\\pw"
     ]
   }
 }

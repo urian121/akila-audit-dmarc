@@ -42,6 +42,9 @@ class MonitoredDomain(db.Model):
     aggregate_reports = db.relationship(
         "AggregateReport", backref="domain_ref", lazy="dynamic", cascade="all, delete-orphan"
     )
+    forensic_reports = db.relationship(
+        "ForensicReport", backref="domain_ref", lazy="dynamic", cascade="all, delete-orphan"
+    )
     alerts = db.relationship(
         "Alert", backref="domain_ref", lazy="dynamic", cascade="all, delete-orphan"
     )
@@ -99,6 +102,39 @@ class AggregateRecord(db.Model):
     spf_aligned = db.Column(db.Boolean)
     dmarc_aligned = db.Column(db.Boolean)
     header_from = db.Column(db.String(255))
+
+
+class ForensicReport(db.Model):
+    """Un reporte forense (RUF) de un mensaje individual que falló SPF/DKIM/DMARC — a diferencia de
+    AggregateReport (resumen diario agregado por IP), llega casi en tiempo real, uno por mensaje.
+
+    Decisión de retención/PII (ver AGENTS.md): sólo se guarda metadata de triage (asunto, remitente,
+    resultado de la validación, origen). El payload de parsedmarc trae además `sample`/`parsed_sample`
+    con el correo original completo (cuerpo, cabeceras, adjuntos) — eso NUNCA se persiste acá, a
+    propósito, para no acumular contenido de correo real de terceros sin necesidad."""
+
+    __tablename__ = "forensic_reports"
+
+    id = db.Column(db.Integer, primary_key=True)
+    monitored_domain_id = db.Column(
+        db.Integer, db.ForeignKey("monitored_domains.id"), nullable=False, index=True
+    )
+    feedback_type = db.Column(db.String(64))
+    arrival_date = db.Column(db.DateTime(timezone=True), nullable=True)
+    source_ip = db.Column(db.String(64), index=True)
+    source_country = db.Column(db.String(8))
+    source_asn_org = db.Column(db.String(255))
+    source_reverse_dns = db.Column(db.String(255))
+    authentication_results = db.Column(db.Text)
+    delivery_result = db.Column(db.String(64))
+    auth_failure = db.Column(db.String(128))  # csv, ej. "dmarc,spf" — de FailureReport["auth_failure"]
+    dkim_domain = db.Column(db.String(255))
+    subject = db.Column(db.String(998))  # dato sensible: contenido real del correo, ver AGENTS.md
+    message_id = db.Column(db.String(255))
+    from_address = db.Column(db.String(255))
+    to_address = db.Column(db.String(255))
+    sample_headers_only = db.Column(db.Boolean, nullable=True)
+    received_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class Alert(db.Model):

@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{% block title %}Akila - Cumplimiento{% endblock %}
+{% block content %}
+    <div class="max-w-5xl mx-auto px-6 py-16">
+      <h1 class="text-2xl text-zinc-900 tracking-tight mb-1">Cumplimiento</h1>
+      <p class="text-sm text-zinc-500 leading-relaxed mb-8 max-w-2xl">
+        De un vistazo, qué dominios monitoreados ya cumplen un mínimo de autenticación —
+        política DMARC en cuarentena o rechazo, y al menos 95% del correo autenticando
+        correctamente en los últimos 30 días — y cuáles todavía necesitan atención.
+      </p>
+
+      <div class="bg-white rounded-md p-4">
+        <div class="overflow-x-auto">
+          <table class="w-full text-[12px] text-left">
+            <thead>
+              <tr class="text-zinc-500 uppercase text-[10px] tracking-wide border-t border-zinc-100">
+                <th class="px-3 py-2.5">Dominio</th>
+                <th class="px-3 py-2.5">Política DMARC</th>
+                <th class="px-3 py-2.5">Pass rate (30d)</th>
+                <th class="px-3 py-2.5">DNS en vivo</th>
+                <th class="px-3 py-2.5">Estado</th>
+              </tr>
+            </thead>
+            {% include "partials/compliance_rows.html" %}
+          </table>
+        </div>
+      </div>
+    </div>
+{% endblock %}

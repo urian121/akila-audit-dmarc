@@ -27,34 +27,43 @@ COMMON_DKIM_SELECTORS = [
 ]
 
 
-def check_dkim(domain, selectors):
-    """Prueba una lista de selectores DKIM contra el dominio y devuelve el resultado de cada uno."""
-    results = []
-    for selector in selectors:
-        name = f"{selector}._domainkey.{domain}".encode("ascii")
-        entry = {"selector": selector, "found": False}
-        try:
-            record_bytes = dkim.get_txt(name)
-        except dkim.DKIMException as error:
-            entry["error"] = str(error)
-            results.append(entry)
-            continue
+def _check_dkim_selector(domain, selector):
+    """Prueba un solo selector DKIM contra el dominio y devuelve su resultado — pieza de check_dkim()."""
+    name = f"{selector}._domainkey.{domain}".encode("ascii")
+    entry = {"selector": selector, "found": False}
+    try:
+        record_bytes = dkim.get_txt(name)
+    except dkim.DKIMException as error:
+        entry["error"] = str(error)
+        return entry
 
-        if record_bytes:
-            entry["found"] = True
-            entry["record"] = record_bytes.decode("utf-8", errors="replace")
-            try:
-                _pk, keysize, ktag, _seqtlsrpt = dkim.load_pk_from_dns(
-                    name, dnsfunc=dkim.get_txt
-                )
-                entry["valid"] = True
-                entry["key_type"] = ktag.decode() if isinstance(ktag, bytes) else ktag
-                entry["key_size"] = keysize
-            except dkim.DKIMException as error:
-                entry["valid"] = False
-                entry["error"] = str(error)
-        results.append(entry)
-    return results
+    if record_bytes:
+        entry["found"] = True
+        entry["record"] = record_bytes.decode("utf-8", errors="replace")
+        try:
+            _pk, keysize, ktag, _seqtlsrpt = dkim.load_pk_from_dns(
+                name, dnsfunc=dkim.get_txt
+            )
+            entry["valid"] = True
+            entry["key_type"] = ktag.decode() if isinstance(ktag, bytes) else ktag
+            entry["key_size"] = keysize
+        except dkim.DKIMException as error:
+            entry["valid"] = False
+            entry["error"] = str(error)
+    return entry
+
+
+def check_dkim(domain, selectors):
+    """Prueba una lista de selectores DKIM contra el dominio, en paralelo (ThreadPoolExecutor, mismo
+    patrón que build_extra_dns_instructions() más abajo) y devuelve el resultado de cada uno.
+
+    En serie, un selector inexistente puede tardar varios segundos en responder según el proveedor de
+    DNS del dominio (visto en producción: ~5.4s por selector en uno real) — con ~10 selectores comunes,
+    eso suma hasta casi un minuto por dominio. En paralelo, el tiempo total queda acotado por el
+    selector más lento, no por la suma de los diez.
+    """
+    with ThreadPoolExecutor(max_workers=min(8, len(selectors))) as executor:
+        return list(executor.map(lambda selector: _check_dkim_selector(domain, selector), selectors))
 
 
 def run_check(domain, extra_selector=None):

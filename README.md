@@ -77,9 +77,17 @@ Alta de un dominio para **monitoreo continuo**: registra el dominio en Postgres 
 
 Lista de los dominios registrados para monitoreo por la cuenta logueada, con link a cada dashboard. Ver `/registro` e `/ingresar` para crear cuenta e iniciar sesión.
 
+### `GET /cumplimiento` (requiere sesión)
+
+Tabla con todos los dominios monitoreados de la cuenta logueada de un vistazo: política DMARC actual, % de correo que autenticó en los últimos 30 días, estado de DNS en vivo, y si cumple un mínimo (política en cuarentena/rechazo **y** al menos 95% de cumplimiento). Útil para no entrar dominio por dominio cuando se administran varios. La columna de DNS en vivo se carga aparte (`GET /cumplimiento/protocolos`, fragmento htmx) para no bloquear la tabla mientras se consulta el DNS de cada dominio.
+
 ### `POST /webhooks/dmarc-aggregate/<secret>`
 
 Recibe el JSON de un reporte DMARC agregado ya parseado por [parsedmarc](https://github.com/domainaware/parsedmarc) (configurado como servicio aparte, ver `config/parsedmarc.ini.example`). `<secret>` debe coincidir con `DMARC_WEBHOOK_SECRET`; si no, responde 404. Guarda el reporte y compara los remitentes reales contra el SPF declarado del dominio, generando una alerta por cada IP no reconocida.
+
+### `POST /webhooks/dmarc-forensic/<secret>`
+
+Igual que el anterior pero para reportes forenses (RUF) — un reporte por cada mensaje individual que falló la validación, no un agregado diario. Mismo `DMARC_WEBHOOK_SECRET`, solo cambia el path. Guarda sólo metadata de triage (asunto, remitente, IP de origen, resultado) — nunca el cuerpo/adjuntos del correo original, que parsedmarc también manda en el payload (`services/forensic_reports_service.py` descarta esa parte a propósito). Se muestran en el dashboard de cada dominio (`/monitoreo/<token>`), sección "Reportes forenses (RUF)". Es normal no ver ninguno: Gmail y Yahoo, entre otros, ya no los envían.
 
 ### `config/parsedmarc.ini`
 
@@ -90,6 +98,8 @@ El archivo real (`config/parsedmarc.ini`, no el `.example`) está en `.gitignore
 **Importante**: la casilla configurada ahí debe ser una **dedicada sólo a recibir reportes DMARC**, nunca una casilla de uso normal — parsedmarc mueve automáticamente cualquier correo que no sea un reporte válido a una carpeta de archivo (`archive_folder`), así que apuntarlo a un correo de trabajo real termina archivando esos correos sin querer.
 
 **Estado actual (recordatorio)**: ya existe un servicio `parsedmarc-worker` desplegado en Railway, en el mismo proyecto que la app web (`akila-dmarc`). Corre `parsedmarc` de forma continua, escucha por IMAP la casilla configurada en sus variables `PARSEDMARC_IMAP_*`, y manda cada reporte agregado que encuentra a `https://akila-dmarc-production.up.railway.app/webhooks/dmarc-aggregate/<DMARC_WEBHOOK_SECRET>` (el secreto real está sólo en las variables de Railway de ambos servicios, no acá).
+
+**Pendiente en ese worker ya desplegado**: todavía no tiene `PARSEDMARC_GENERAL_SAVE_FAILURE`/`PARSEDMARC_WEBHOOK_FAILURE_URL` (o sus equivalentes en `parsedmarc.ini`) — sin eso, nunca manda nada a `/webhooks/dmarc-forensic/<secret>` aunque la ruta ya exista y funcione. Es un cambio de configuración en Railway, no de código.
 
 Notas rápidas para no confundir estas variables entre sí:
 
@@ -109,3 +119,6 @@ Ver el plan completo de esta funcionalidad (infraestructura de correo, DNS, y la
 ## Roadmap
 
 Los endpoints adicionales por protocolo (`/api/spf`, `/api/dmarc`, `/api/dkim`, `/api/bimi`, `/api/mta-sts`, `/api/tls-rpt`, `/api/mx`, `/api/dnssec`, `/api/starttls`, validación en bulk, etc.) y la arquitectura por capas (routes/services/models/utils) todavía no están implementados. Ver [AGENTS.md](AGENTS.md) para el detalle completo.
+
+
+**DNS en vivo:** qué tan bien está configurado el dominio ahora mismo (si tiene SPF/DKIM/DNSSEC/etc. bien puestos), sin importar cuánto tráfico real haya.

@@ -9,6 +9,10 @@
 
 [general]
 save_aggregate = True
+; save_failure: ingiere también los reportes forenses (RUF) además de los agregados (RUA). En
+; parsedmarc 10.x la clave se renombró de "save_forensic" a "save_failure" (que sigue funcionando
+; como alias por compatibilidad, pero usar la nueva evita el warning de deprecación).
+save_failure = True
 
 [mailbox]
 ; watch=True usa IMAP IDLE: reacciona casi al instante cuando llega un
@@ -30,3 +34,7 @@ password =
 ; parsedmarc permita agregar headers custom al webhook — ver ruta
 ; /webhooks/dmarc-aggregate/<secret> en app.py, que valida ese secreto.
 aggregate_url = https://tu-app.up.railway.app/webhooks/dmarc-aggregate/CAMBIAR_POR_DMARC_WEBHOOK_SECRET
+; failure_url: reportes forenses (RUF). En parsedmarc 10.x la clave se renombró de "forensic_url" a
+; "failure_url" (el nombre viejo sigue funcionando como alias). Mismo DMARC_WEBHOOK_SECRET que
+; aggregate_url arriba -- es el mismo secreto de la app web, solo cambia el path.
+failure_url = https://tu-app.up.railway.app/webhooks/dmarc-forensic/CAMBIAR_POR_DMARC_WEBHOOK_SECRET

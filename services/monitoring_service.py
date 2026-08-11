@@ -1,11 +1,13 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 from sqlalchemy import case, func, or_
 
-from models import Alert, AggregateRecord, AggregateReport, DomainSnapshot, MonitoredDomain, db
+from models import Alert, AggregateRecord, AggregateReport, DomainSnapshot, ForensicReport, MonitoredDomain, db
 from models.monitoring import utcnow
-from services.checkdmarc_service import dns_has_mailbox_in_rua, dns_has_mailbox_in_tls_rpt_rua
+from services.card_builder import DMARC_POLICY_LABELS, build_summary
+from services.checkdmarc_service import dns_has_mailbox_in_rua, dns_has_mailbox_in_tls_rpt_rua, run_check
 
 # Mismo texto armado en detect_unknown_senders() (reports_service.py) — si se
 # cambia esa frase, ajustar este patrón también, o el agrupado deja de reconocer
@@ -81,7 +83,8 @@ def get_dashboard_data(access_token):
         return None
     alerts = monitored.alerts.order_by(Alert.created_at.desc()).limit(50).all()
     reports = monitored.aggregate_reports.order_by(AggregateReport.received_at.desc()).limit(20).all()
-    return {"monitored": monitored, "alerts": alerts, "reports": reports}
+    forensic_reports = monitored.forensic_reports.order_by(ForensicReport.received_at.desc()).limit(20).all()
+    return {"monitored": monitored, "alerts": alerts, "reports": reports, "forensic_reports": forensic_reports}
 
 
 _MESES_ES = [
@@ -442,3 +445,106 @@ def group_unknown_sender_alerts(alerts):
         })
     groups.sort(key=lambda g: g["last_seen"], reverse=True)
     return groups, others
+
+
+def get_compliance_overview(user_id, days=30):
+    """Arma el resumen de cumplimiento de TODOS los dominios monitoreados del usuario: política DMARC
+    actual, pass_rate de los últimos `days` días, y si "cumple" — política >= quarantine Y pass_rate >=
+    COMPLIANCE_PASS_THRESHOLD (mismo umbral que ya usa list_dmarc_reports() para marcar un informe
+    'aprobado': un solo criterio de cumplimiento en toda la app, no dos números distintos). Sin datos
+    de tráfico en el período: 'no_data', no 'attention' — no hay evidencia de que algo esté mal, sólo
+    de que no hubo/no llegó tráfico que medir (misma idea que compliance_series en get_trends_data).
+
+    Agregado en lote — una consulta para el pass/fail de todos los dominios y otra para la última
+    política de cada uno — en vez de llamar get_impact_analysis() un dominio a la vez: mismo motivo que
+    get_trends_data/list_dmarc_reports, evitar N+1 con muchos dominios monitoreados."""
+    domains = list_domains(user_id)
+    if not domains:
+        return []
+
+    domain_ids = [d.id for d in domains]
+    cutoff = utcnow() - timedelta(days=days)
+
+    totals_rows = (
+        db.session.query(
+            AggregateReport.monitored_domain_id.label("domain_id"),
+            func.sum(case((AggregateRecord.dmarc_aligned.is_(True), AggregateRecord.count), else_=0)).label("passed"),
+            func.sum(case((AggregateRecord.dmarc_aligned.is_(False), AggregateRecord.count), else_=0)).label("failed"),
+        )
+        .join(AggregateRecord, AggregateRecord.report_id == AggregateReport.id)
+        .filter(AggregateReport.monitored_domain_id.in_(domain_ids), AggregateReport.date_begin >= cutoff)
+        .group_by(AggregateReport.monitored_domain_id)
+        .all()
+    )
+    totals_by_domain = {row.domain_id: (row.passed or 0, row.failed or 0) for row in totals_rows}
+
+    # Última política conocida por dominio: subquery con el checked_at más reciente de cada uno,
+    # join de vuelta contra DomainSnapshot para traer su raw_data completo.
+    latest_ids = (
+        db.session.query(
+            DomainSnapshot.monitored_domain_id.label("domain_id"),
+            func.max(DomainSnapshot.checked_at).label("max_checked_at"),
+        )
+        .filter(DomainSnapshot.monitored_domain_id.in_(domain_ids))
+        .group_by(DomainSnapshot.monitored_domain_id)
+        .subquery()
+    )
+    latest_snapshots = (
+        db.session.query(DomainSnapshot)
+        .join(
+            latest_ids,
+            (DomainSnapshot.monitored_domain_id == latest_ids.c.domain_id)
+            & (DomainSnapshot.checked_at == latest_ids.c.max_checked_at),
+        )
+        .all()
+    )
+    policy_by_domain = {s.monitored_domain_id: (s.raw_data or {}).get("dmarc_policy") for s in latest_snapshots}
+
+    quarantine_step = _POLICY_STEPS.index("quarantine")
+    overview = []
+    for domain in domains:
+        passed, failed = totals_by_domain.get(domain.id, (0, 0))
+        total = passed + failed
+        pass_rate = round(passed / total * 100, 1) if total else None
+        policy = policy_by_domain.get(domain.id)
+        policy_step = _POLICY_STEPS.index(policy) if policy in _POLICY_STEPS else 0
+
+        if total == 0:
+            status = "no_data"
+        elif policy_step >= quarantine_step and pass_rate >= COMPLIANCE_PASS_THRESHOLD:
+            status = "ok"
+        else:
+            status = "attention"
+
+        overview.append({
+            "monitored": domain,
+            "current_policy": policy,
+            "policy_label": DMARC_POLICY_LABELS.get(policy, (policy or "Sin registro DMARC", None))[0],
+            "pass_rate": pass_rate,
+            "total": total,
+            "status": status,
+        })
+    return overview
+
+
+def get_compliance_protocol_status(domains):
+    """Corre run_check() para cada dominio en paralelo (ThreadPoolExecutor — mismo patrón que
+    build_extra_dns_instructions() en checkdmarc_service.py, pero paralelizando entre dominios en vez
+    de entre protocolos de uno solo) y devuelve su resumen ok/warn/fail (build_summary); None para el
+    que falló. Pensado para la columna 'DNS en vivo' de /cumplimiento — se carga aparte vía htmx (ver
+    compliance_protocol_status en app.py) para no bloquear la carga inicial de la tabla con N consultas
+    de DNS que pueden tardar varios segundos cada una."""
+    if not domains:
+        return {}
+
+    def _check(domain):
+        """Corre build_summary(run_check()) para un dominio; None si falla (nunca tumba el resto)."""
+        try:
+            return build_summary(run_check(domain.domain))
+        except Exception as error:
+            print(f"[compliance] no se pudo chequear el DNS de {domain.domain}: {error}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=min(8, len(domains))) as executor:
+        results = list(executor.map(_check, domains))
+    return {domain.id: result for domain, result in zip(domains, results)}

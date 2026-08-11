@@ -1,0 +1,48 @@
+<tbody
+  id="compliance-rows"
+  {% if protocol_status is none %}
+    hx-get="{{ url_for('compliance_protocol_status') }}"
+    hx-trigger="load"
+    hx-swap="outerHTML"
+  {% endif %}
+>
+  {% set status_meta = {
+    'ok': ('bg-emerald-50', 'text-emerald-700', 'border-emerald-200', 'Cumple'),
+    'attention': ('bg-rose-50', 'text-rose-700', 'border-rose-200', 'Requiere atención'),
+    'no_data': ('bg-zinc-100', 'text-zinc-500', 'border-zinc-200', 'Sin datos'),
+  } %}
+  {% for row in overview %}
+    {% set monitored = row.monitored %}
+    {% set meta = status_meta[row.status] %}
+    <tr
+      class="border-t border-zinc-100 hover:bg-zinc-50 cursor-pointer transition-colors"
+      onclick="location.href='{{ url_for('monitoring_dashboard', access_token=monitored.access_token) }}'"
+    >
+      <td class="px-3 py-2.5 text-zinc-700">{{ monitored.domain }}</td>
+      <td class="px-3 py-2.5 text-zinc-500">{{ row.policy_label }}</td>
+      <td class="px-3 py-2.5">
+        {% if row.pass_rate is none %}
+          <span class="text-zinc-400">—</span>
+        {% else %}
+          <span class="{{ 'text-emerald-600' if row.pass_rate >= 95 else ('text-amber-600' if row.pass_rate >= 80 else 'text-rose-600') }} font-medium">{{ row.pass_rate }}%</span>
+        {% endif %}
+      </td>
+      <td class="px-3 py-2.5">
+        {% if protocol_status is none %}
+          <span class="text-[11px] text-zinc-400">Cargando…</span>
+        {% elif protocol_status.get(monitored.id) %}
+          <span class="{{ protocol_status[monitored.id].score_color }} font-medium">{{ protocol_status[monitored.id].score }}% saludable</span>
+        {% else %}
+          <span class="text-[11px] text-zinc-400">No se pudo verificar</span>
+        {% endif %}
+      </td>
+      <td class="px-3 py-2.5">
+        <span class="text-[10px] tracking-wider border rounded px-1.5 py-0.5 {{ meta[0] }} {{ meta[1] }} {{ meta[2] }}">{{ meta[3] }}</span>
+      </td>
+    </tr>
+  {% else %}
+    <tr>
+      <td colspan="5" class="px-3 py-6 text-center text-zinc-400">Todavía no hay dominios registrados para monitoreo.</td>
+    </tr>
+  {% endfor %}
+</tbody>

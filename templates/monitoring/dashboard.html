@@ -171,6 +171,42 @@
         <p class="text-[12px] text-zinc-400">Sin reportes todavía.</p>
       {% endfor %}
     </div>
+
+    <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1 mt-10">Reportes forenses (RUF)</h2>
+    <p class="text-[11px] text-zinc-500 leading-relaxed mb-3 max-w-2xl">
+      Un reporte por cada mensaje individual que falló SPF/DKIM/DMARC, casi en tiempo real — a diferencia de
+      los reportes de arriba (un resumen agregado, una vez al día). Muchos proveedores grandes (Gmail, Yahoo)
+      ya no los mandan por privacidad, así que no ver ninguno acá es normal y no indica un problema. Solo se
+      guarda metadata de triage (asunto, remitente, origen) — nunca el cuerpo completo del correo original.
+    </p>
+    <div class="grid grid-cols-1 gap-3">
+      {% for report in forensic_reports %}
+        <div class="rise bg-white rounded-md p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] tracking-wider border rounded px-1.5 py-0.5 border-rose-200 text-rose-700 bg-rose-50">
+              {{ report.auth_failure or 'falla de autenticación' }}
+            </span>
+            <span class="text-[10px] text-zinc-400">
+              {{ (report.arrival_date or report.received_at).strftime('%Y-%m-%d %H:%M') }} UTC
+            </span>
+          </div>
+          <p class="text-[12px] text-zinc-700 truncate">{{ report.subject or 'sin asunto' }}</p>
+          <div class="flex items-center justify-between gap-2 mt-1.5">
+            <span class="text-[11px] text-zinc-500 truncate">
+              {{ report.from_address or 'remitente desconocido' }}{% if report.to_address %} <span class="text-zinc-300">&rarr;</span> {{ report.to_address }}{% endif %}
+            </span>
+            <span class="text-[10px] text-zinc-400 shrink-0">
+              {{ report.source_ip or '?' }}{% if report.source_asn_org %} &middot; {{ report.source_asn_org }}{% endif %}
+            </span>
+          </div>
+          {% if report.sample_headers_only %}
+            <p class="text-[10px] text-zinc-400 mt-1.5">solo cabeceras (sin cuerpo del mensaje)</p>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="text-[12px] text-zinc-400">Sin reportes forenses todavía.</p>
+      {% endfor %}
+    </div>
     </div>
 
   <script>

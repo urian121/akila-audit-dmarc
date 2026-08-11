@@ -14,7 +14,8 @@ from services.checkdmarc_service import build_dns_screen_data, run_check
 from services.domain_health_analysis import generate_health_analysis
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
-from services.monitoring_service import get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_report_breakdown, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
+from services.monitoring_service import get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_report_breakdown, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
+from services.forensic_reports_service import ingest_forensic_report
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
 
@@ -369,6 +370,25 @@ def monitoring_list():
     return render_template("monitoring/list.html", monitored_domains=list_domains(current_user.id))
 
 
+@app.route("/cumplimiento", methods=["GET"])
+@login_required
+def compliance():
+    """Vista de cumplimiento cross-dominio: para todos los dominios monitoreados del usuario, política
+    DMARC actual y pass_rate de los últimos 30 días — la columna de DNS en vivo llega aparte por htmx."""
+    overview = get_compliance_overview(current_user.id)
+    return render_template("monitoring/compliance.html", overview=overview, protocol_status=None)
+
+
+@app.route("/cumplimiento/protocolos", methods=["GET"])
+@login_required
+def compliance_protocol_status():
+    """Fragmento htmx: chequeo de DNS en vivo de todos los dominios monitoreados del usuario, corridos
+    en paralelo — cargado aparte de /cumplimiento para no bloquear su carga inicial."""
+    overview = get_compliance_overview(current_user.id)
+    protocol_status = get_compliance_protocol_status(list_domains(current_user.id))
+    return render_template("partials/compliance_rows.html", overview=overview, protocol_status=protocol_status)
+
+
 TRENDS_RANGE_DAYS = {"7d": 7, "30d": 30, "90d": 90}
 
 
@@ -568,6 +588,22 @@ def webhook_dmarc_aggregate(secret):
         # parsedmarc reintente indefinidamente la misma entrega.
         db.session.rollback()
         print(f"[webhook_dmarc_aggregate] error procesando payload: {error}")
+    return jsonify({"status": "ok"}), 200
+
+
+@app.route("/webhooks/dmarc-forensic/<secret>", methods=["POST"])
+def webhook_dmarc_forensic(secret):
+    """Recibe el JSON de un reporte forense (RUF) ya parseado por parsedmarc (salida 'webhook' -> failure_url)."""
+    if not DMARC_WEBHOOK_SECRET or not secrets.compare_digest(secret, DMARC_WEBHOOK_SECRET):
+        abort(404)  # 404 en vez de 401: no delatar que la ruta existe a quien no trae el secreto
+    payload = request.get_json(silent=True) or {}
+    try:
+        ingest_forensic_report(payload)
+    except Exception as error:
+        # Nunca devolver 500 acá: un payload inesperado no debe hacer que
+        # parsedmarc reintente indefinidamente la misma entrega.
+        db.session.rollback()
+        print(f"[webhook_dmarc_forensic] error procesando payload: {error}")
     return jsonify({"status": "ok"}), 200
 
 
