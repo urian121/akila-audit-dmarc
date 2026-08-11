@@ -14,7 +14,7 @@ from services.checkdmarc_service import build_dns_screen_data, run_check
 from services.domain_health_analysis import generate_health_analysis
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
-from services.monitoring_service import get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_report_breakdown, get_subdomain_breakdown, get_trends_data, group_unknown_sender_alerts, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
+from services.monitoring_service import get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_report_breakdown, get_subdomain_breakdown, get_trends_data, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
 from services.forensic_reports_service import ingest_forensic_report
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
@@ -520,17 +520,90 @@ def trends_ai_analysis(access_token):
     return render_template("partials/ai_health_analysis.html", analysis=analysis, monitored=monitored)
 
 
+@app.route("/monitoreo/<access_token>/alertas", methods=["GET"])
+def monitoring_dashboard_alerts(access_token):
+    """Fragmento htmx: tabla de alertas del dominio, filtrada/paginada — separada de
+    monitoring_dashboard por el mismo motivo que monitoring_dashboard_senders."""
+    monitored = get_domain_by_token(access_token)
+    if monitored is None:
+        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
+
+    rango = request.args.get("rango", "30d")
+    if rango == "todos":
+        days = None
+    else:
+        if rango not in TRENDS_RANGE_DAYS:
+            rango = "30d"
+        days = TRENDS_RANGE_DAYS[rango]
+    tipo = request.args.get("tipo", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    alerts_table = list_domain_alerts(monitored, days=days, tipo=tipo, q=q, page=page)
+
+    return render_template(
+        "partials/domain_alerts_table.html",
+        monitored=monitored, alerts_table=alerts_table,
+        alerts_rango=rango, alerts_tipo=tipo, alerts_q=q,
+    )
+
+
+@app.route("/monitoreo/<access_token>/remitentes", methods=["GET"])
+def monitoring_dashboard_senders(access_token):
+    """Fragmento htmx: tabla de remitentes reales del dominio, filtrada/paginada — separada de
+    monitoring_dashboard para que cambiar un filtro solo recalcule la tabla, no toda la página
+    (alertas, desglose por subdominio, reportes forenses)."""
+    monitored = get_domain_by_token(access_token)
+    if monitored is None:
+        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
+
+    rango = request.args.get("rango", "30d")
+    if rango == "todos":
+        days = None
+    else:
+        if rango not in TRENDS_RANGE_DAYS:
+            rango = "30d"
+        days = TRENDS_RANGE_DAYS[rango]
+    estado = request.args.get("estado", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    senders = list_domain_senders(monitored, days=days, estado=estado, q=q, page=page)
+
+    return render_template(
+        "partials/domain_senders_table.html",
+        monitored=monitored, senders=senders, rango=rango, estado=estado, q=q,
+    )
+
+
 @app.route("/monitoreo/<access_token>", methods=["GET"])
 def monitoring_dashboard(access_token):
-    """Dashboard privado de un dominio monitoreado: reportes recibidos y alertas generadas."""
+    """Dashboard privado de un dominio monitoreado: remitentes reales (agrupados y filtrables) y alertas generadas."""
     data = get_dashboard_data(access_token)
     if data is None:
         return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
-    alert_groups, other_alerts = group_unknown_sender_alerts(data["alerts"])
+
+    rango = request.args.get("rango", "30d")
+    if rango == "todos":
+        days = None
+    else:
+        if rango not in TRENDS_RANGE_DAYS:
+            rango = "30d"
+        days = TRENDS_RANGE_DAYS[rango]
+    estado = request.args.get("estado", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    senders = list_domain_senders(data["monitored"], days=days, estado=estado, q=q, page=page)
+    # Filtros propios con nombres fijos (no leídos de la URL): esta página comparte
+    # rango/estado/q/page con la tabla de remitentes de arriba — leer los mismos query
+    # params para esta tabla los pisaría entre sí. Sin hx-push-url en ninguna de las
+    # dos tablas, la URL de la página nunca refleja el filtro activo, así que no hay
+    # necesidad real de deep-linking al estado filtrado de esta tabla en particular.
+    alerts_table = list_domain_alerts(data["monitored"], days=30, tipo="todos", q="", page=1)
+
     return render_template(
         "monitoring/dashboard.html", rua_mailbox=DMARC_REPORTS_MAILBOX,
-        alert_groups=alert_groups, other_alerts=other_alerts,
-        subdomain_breakdown=get_subdomain_breakdown(data["monitored"]), **data,
+        alerts_table=alerts_table, alerts_rango="30d", alerts_tipo="todos", alerts_q="",
+        subdomain_breakdown=get_subdomain_breakdown(data["monitored"]),
+        senders=senders, rango=rango, estado=estado, q=q, **data,
     )
 
 

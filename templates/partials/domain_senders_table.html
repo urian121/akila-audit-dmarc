@@ -1,0 +1,112 @@
+<div id="senders-table">
+  <form
+    id="senders-filters-form"
+    hx-get="{{ url_for('monitoring_dashboard_senders', access_token=monitored.access_token) }}"
+    hx-target="#senders-table"
+    hx-swap="outerHTML"
+    hx-trigger="change, input delay:300ms"
+    class="bg-white rounded-md p-4 mb-10"
+  >
+    <div class="flex flex-wrap items-center gap-3 mb-3">
+      <span class="text-[11px] text-zinc-500 shrink-0">{{ senders['total_items'] }} remitente{{ '' if senders['total_items'] == 1 else 's' }}</span>
+
+      <div class="inline-flex bg-zinc-100 rounded-md p-1">
+        {% for opt, label in [('todos', 'Todos'), ('con_fallas', 'Con fallas'), ('sin_fallas', 'Sin fallas')] %}
+          <label class="cursor-pointer">
+            <input type="radio" name="estado" value="{{ opt }}" class="peer sr-only" {% if estado == opt %}checked{% endif %}>
+            <span class="inline-block px-3 py-1.5 rounded text-xs font-medium tracking-wide text-zinc-500 peer-checked:bg-[#2d2147] peer-checked:text-white transition-colors">{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <div class="inline-flex bg-zinc-100 rounded-md p-1">
+        {% for opt, label in [('7d', '7d'), ('30d', '30 días'), ('90d', '90 días'), ('todos', 'Todos')] %}
+          <label class="cursor-pointer">
+            <input type="radio" name="rango" value="{{ opt }}" class="peer sr-only" {% if rango == opt %}checked{% endif %}>
+            <span class="inline-block px-3 py-1.5 rounded text-xs font-medium tracking-wide text-zinc-500 peer-checked:bg-[#2d2147] peer-checked:text-white transition-colors">{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <input
+        type="text"
+        name="q"
+        value="{{ q }}"
+        placeholder="Buscar organización o IP…"
+        class="flex-1 min-w-[200px] ml-auto bg-white border border-zinc-200 rounded-md px-3 py-2 text-[12px] text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-[#2d2147]/60 transition-colors"
+      >
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[640px] text-[12px] text-left">
+        <thead>
+          <tr class="text-zinc-500 uppercase text-[10px] tracking-wide border-t border-zinc-100">
+            <th class="px-3 py-2.5 whitespace-nowrap">Remitente</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Volumen</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">SPF</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">DKIM</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Última vez</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in senders['items'] %}
+            <tr class="border-t border-zinc-100 hover:bg-zinc-50 transition-colors">
+              <td class="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
+                {{ item.source_ip }}
+                <span class="text-zinc-400">({{ item.source_asn_org }}{% if item.source_country %}, {{ item.source_country }}{% endif %})</span>
+              </td>
+              <td class="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{{ '{:,}'.format(item.total).replace(',', '.') }}</td>
+              <td class="px-3 py-2.5 whitespace-nowrap">
+                {% if item.spf_rate is none %}
+                  <span class="text-zinc-400">—</span>
+                {% else %}
+                  <span class="{{ 'text-emerald-600' if item.spf_rate >= 95 else ('text-amber-600' if item.spf_rate >= 80 else 'text-rose-600') }} font-medium">{{ item.spf_rate }}%</span>
+                {% endif %}
+              </td>
+              <td class="px-3 py-2.5 whitespace-nowrap">
+                {% if item.dkim_rate is none %}
+                  <span class="text-zinc-400">—</span>
+                {% else %}
+                  <span class="{{ 'text-emerald-600' if item.dkim_rate >= 95 else ('text-amber-600' if item.dkim_rate >= 80 else 'text-rose-600') }} font-medium">{{ item.dkim_rate }}%</span>
+                {% endif %}
+              </td>
+              <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{{ item.last_seen.strftime('%Y-%m-%d') if item.last_seen else '—' }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="px-3 py-6 text-center text-zinc-400">
+                {% if senders['total_items'] == 0 and not q and estado == 'todos' %}Sin reportes todavía.{% else %}Ningún remitente coincide con este filtro.{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+
+  {% if senders['total_pages'] > 1 %}
+    <div class="flex items-center justify-between mb-10 -mt-6">
+      <button
+        type="button"
+        hx-get="{{ url_for('monitoring_dashboard_senders', access_token=monitored.access_token) }}"
+        hx-include="#senders-filters-form"
+        hx-vals='{"page": {{ senders['page'] - 1 }}}'
+        hx-target="#senders-table"
+        hx-swap="outerHTML"
+        {{ 'disabled' if senders['page'] <= 1 }}
+        class="px-3 py-1.5 rounded-md text-xs bg-white {{ 'text-zinc-300 pointer-events-none' if senders['page'] <= 1 else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+      >← Anterior</button>
+      <span class="text-[11px] text-zinc-400">página {{ senders['page'] }} de {{ senders['total_pages'] }}</span>
+      <button
+        type="button"
+        hx-get="{{ url_for('monitoring_dashboard_senders', access_token=monitored.access_token) }}"
+        hx-include="#senders-filters-form"
+        hx-vals='{"page": {{ senders['page'] + 1 }}}'
+        hx-target="#senders-table"
+        hx-swap="outerHTML"
+        {{ 'disabled' if senders['page'] >= senders['total_pages'] }}
+        class="px-3 py-1.5 rounded-md text-xs bg-white {{ 'text-zinc-300 pointer-events-none' if senders['page'] >= senders['total_pages'] else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+      >Siguiente →</button>
+    </div>
+  {% endif %}
+</div>

@@ -1,0 +1,107 @@
+<div id="alerts-table">
+  <form
+    id="alerts-filters-form"
+    hx-get="{{ url_for('monitoring_dashboard_alerts', access_token=monitored.access_token) }}"
+    hx-target="#alerts-table"
+    hx-swap="outerHTML"
+    hx-trigger="change, input delay:300ms"
+    class="bg-white rounded-md p-4 mb-10"
+  >
+    <div class="flex flex-wrap items-center gap-3 mb-3">
+      <span class="text-[11px] text-zinc-500 shrink-0">{{ alerts_table['total_items'] }} alerta{{ '' if alerts_table['total_items'] == 1 else 's' }}</span>
+
+      <div class="inline-flex bg-zinc-100 rounded-md p-1">
+        {% for opt, label in [('todos', 'Todos'), ('remitente_desconocido', 'Remitente desconocido'), ('cambio_configuracion', 'Cambios de configuración')] %}
+          <label class="cursor-pointer">
+            <input type="radio" name="tipo" value="{{ opt }}" class="peer sr-only" {% if alerts_tipo == opt %}checked{% endif %}>
+            <span class="inline-block px-3 py-1.5 rounded text-xs font-medium tracking-wide text-zinc-500 peer-checked:bg-[#2d2147] peer-checked:text-white transition-colors">{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <div class="inline-flex bg-zinc-100 rounded-md p-1">
+        {% for opt, label in [('7d', '7d'), ('30d', '30 días'), ('90d', '90 días'), ('todos', 'Todos')] %}
+          <label class="cursor-pointer">
+            <input type="radio" name="rango" value="{{ opt }}" class="peer sr-only" {% if alerts_rango == opt %}checked{% endif %}>
+            <span class="inline-block px-3 py-1.5 rounded text-xs font-medium tracking-wide text-zinc-500 peer-checked:bg-[#2d2147] peer-checked:text-white transition-colors">{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <input
+        type="text"
+        name="q"
+        value="{{ alerts_q }}"
+        placeholder="Buscar organización, mensaje o IP…"
+        class="flex-1 min-w-[200px] ml-auto bg-white border border-zinc-200 rounded-md px-3 py-2 text-[12px] text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-[#2d2147]/60 transition-colors"
+      >
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[720px] text-[12px] text-left">
+        <thead>
+          <tr class="text-zinc-500 uppercase text-[10px] tracking-wide border-t border-zinc-100">
+            <th class="px-3 py-2.5 whitespace-nowrap">Tipo</th>
+            <th class="px-3 py-2.5">Detalle</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">IP(s)</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Cantidad</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Última vez</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in alerts_table['items'] %}
+            <tr class="border-t border-zinc-100 hover:bg-zinc-50 transition-colors">
+              <td class="px-3 py-2.5 whitespace-nowrap">
+                <span class="text-[10px] tracking-wider border rounded px-1.5 py-0.5 {{ 'border-rose-200 text-rose-700 bg-rose-50' if row.kind == 'unknown_sender' else 'border-amber-200 text-amber-700 bg-amber-50' }}">
+                  {{ row.kind_label }}
+                </span>
+              </td>
+              <td class="px-3 py-2.5 text-zinc-700 max-w-xs truncate" title="{{ row.detail }}">{{ row.detail }}</td>
+              <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
+                {% if row.ips %}
+                  {{ row.ips[:3] | join(', ') }}{% if row.ips | length > 3 %} +{{ row.ips | length - 3 }}{% endif %}
+                {% else %}
+                  <span class="text-zinc-400">—</span>
+                {% endif %}
+              </td>
+              <td class="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{{ row.count }}</td>
+              <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{{ row.last_seen.strftime('%d-%m-%Y') }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="px-3 py-6 text-center text-zinc-400">
+                {% if alerts_table['total_items'] == 0 and not alerts_q and alerts_tipo == 'todos' %}Sin alertas por ahora — buena señal.{% else %}Ninguna alerta coincide con este filtro.{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+
+  {% if alerts_table['total_pages'] > 1 %}
+    <div class="flex items-center justify-between mb-10 -mt-6">
+      <button
+        type="button"
+        hx-get="{{ url_for('monitoring_dashboard_alerts', access_token=monitored.access_token) }}"
+        hx-include="#alerts-filters-form"
+        hx-vals='{"page": {{ alerts_table['page'] - 1 }}}'
+        hx-target="#alerts-table"
+        hx-swap="outerHTML"
+        {{ 'disabled' if alerts_table['page'] <= 1 }}
+        class="px-3 py-1.5 rounded-md text-xs bg-white {{ 'text-zinc-300 pointer-events-none' if alerts_table['page'] <= 1 else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+      >← Anterior</button>
+      <span class="text-[11px] text-zinc-400">página {{ alerts_table['page'] }} de {{ alerts_table['total_pages'] }}</span>
+      <button
+        type="button"
+        hx-get="{{ url_for('monitoring_dashboard_alerts', access_token=monitored.access_token) }}"
+        hx-include="#alerts-filters-form"
+        hx-vals='{"page": {{ alerts_table['page'] + 1 }}}'
+        hx-target="#alerts-table"
+        hx-swap="outerHTML"
+        {{ 'disabled' if alerts_table['page'] >= alerts_table['total_pages'] }}
+        class="px-3 py-1.5 rounded-md text-xs bg-white {{ 'text-zinc-300 pointer-events-none' if alerts_table['page'] >= alerts_table['total_pages'] else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+      >Siguiente →</button>
+    </div>
+  {% endif %}
+</div>

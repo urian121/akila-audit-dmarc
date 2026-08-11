@@ -37,10 +37,14 @@
       "Bash(tasklist //FI \"PID eq 34332\")",
       "Bash(netstat -ano)",
       "Bash(curl -s -m 3 -o /dev/null -w \"status=%{http_code}\\\\n\" http://127.0.0.1:5000/ingresar)",
-      "Bash(tasklist //FI \"IMAGENAME eq python.exe\" //V)"
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\" //V)",
+      "Bash(nohup env/Scripts/python.exe app.py)",
+      "Bash(timeout 30 bash -c 'until curl -sf http://127.0.0.1:5000/ingresar >/dev/null; do sleep 1; done')",
+      "Bash(cd /c/Users/Urian/Desktop/app-dmarc *)"
     ],
     "additionalDirectories": [
-      "C:\\Users\\Urian\\AppData\\Local\\Temp\\claude\\pw"
+      "C:\\Users\\Urian\\AppData\\Local\\Temp\\claude\\pw",
+      "\\tmp"
     ]
   }
 }

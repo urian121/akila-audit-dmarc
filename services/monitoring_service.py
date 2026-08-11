@@ -415,36 +415,170 @@ def get_dmarc_report_detail(report_id, user_id):
     }
 
 
-def group_unknown_sender_alerts(alerts):
-    """Agrupa las alertas 'remitente desconocido' por organización remitente, para no mostrar una tarjeta por cada IP del mismo remitente repetido.
+def list_domain_alerts(monitored, days=30, tipo="todos", q="", page=1, per_page=20):
+    """Lista paginada y filtrable de alertas de este dominio, en una sola tabla: alertas de
+    'remitente desconocido' agrupadas por organización (para no repetir una fila por cada IP del
+    mismo remitente reincidente), y el resto de los tipos (cambio de política/SPF/selectores DKIM)
+    sin agrupar — son poco frecuentes y no tienen el mismo problema de IPs repetidas.
 
-    Devuelve (grupos, otras_alertas): `otras_alertas` son los demás tipos (cambio de
-    política/SPF/DKIM) — se muestran igual que antes, sin agrupar, porque son
-    poco frecuentes y no tienen el mismo problema de IPs repetidas del mismo origen.
-    Cada grupo trae: org, count, first_seen, last_seen, alerts (todas las de ese grupo).
-    """
+    A diferencia de list_domain_senders, la agrupación por organización se hace en Python, no en SQL:
+    el nombre de organización no es una columna propia, está embebido en Alert.message (ver
+    _UNKNOWN_SENDER_ORG_PATTERN) — agruparlo en SQL implicaría un regex en la base. Sigue siendo
+    seguro: detect_unknown_senders() (reports_service.py) ya evita re-alertar la misma IP dos veces,
+    así que el volumen de alertas de un solo dominio no crece sin límite.
+
+    `days=None` = sin límite de fecha. `tipo`: 'remitente_desconocido' / 'cambio_configuracion' /
+    'todos'. `q` busca por organización, mensaje o IP."""
+    cutoff = None if days is None else utcnow() - timedelta(days=days)
+    query = Alert.query.filter_by(monitored_domain_id=monitored.id)
+    if cutoff is not None:
+        query = query.filter(Alert.created_at >= cutoff)
+    alerts = query.order_by(Alert.created_at.desc()).all()
+
     groups_by_org = {}
-    others = []
+    rows = []
     for alert in alerts:
         if alert.kind != Alert.KIND_UNKNOWN_SENDER:
-            others.append(alert)
+            rows.append({
+                "kind": alert.kind,
+                "kind_label": alert.kind_label,
+                "detail": alert.message,
+                "ips": [],
+                "count": 1,
+                "last_seen": alert.created_at,
+            })
             continue
         match = _UNKNOWN_SENDER_ORG_PATTERN.match(alert.message)
         org = match.group(1) if match else "remitente sin identificar"
         groups_by_org.setdefault(org, []).append(alert)
 
-    groups = []
     for org, org_alerts in groups_by_org.items():
         org_alerts.sort(key=lambda a: a.created_at, reverse=True)
-        groups.append({
-            "org": org,
+        ips = list(dict.fromkeys(a.related_ip for a in org_alerts if a.related_ip))
+        rows.append({
+            "kind": Alert.KIND_UNKNOWN_SENDER,
+            "kind_label": Alert.KIND_LABELS[Alert.KIND_UNKNOWN_SENDER],
+            "detail": org,
+            "ips": ips,
             "count": len(org_alerts),
             "last_seen": org_alerts[0].created_at,
-            "first_seen": org_alerts[-1].created_at,
-            "alerts": org_alerts,
         })
-    groups.sort(key=lambda g: g["last_seen"], reverse=True)
-    return groups, others
+
+    if tipo == "remitente_desconocido":
+        rows = [r for r in rows if r["kind"] == Alert.KIND_UNKNOWN_SENDER]
+    elif tipo == "cambio_configuracion":
+        rows = [r for r in rows if r["kind"] != Alert.KIND_UNKNOWN_SENDER]
+
+    if q:
+        needle = q.strip().lower()
+        rows = [
+            r for r in rows
+            if needle in r["detail"].lower() or any(needle in ip.lower() for ip in r["ips"])
+        ]
+
+    rows.sort(key=lambda r: r["last_seen"], reverse=True)
+
+    total_items = len(rows)
+    per_page = max(1, per_page)
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * per_page
+
+    return {
+        "items": rows[start:start + per_page],
+        "total_items": total_items,
+        "page": page,
+        "total_pages": total_pages,
+    }
+
+
+def list_domain_senders(monitored, days=30, estado="todos", q="", page=1, per_page=20):
+    """Lista paginada y filtrable de remitentes reales que enviaron correo en nombre de este dominio,
+    agrupados por IP — mismo dato que antes se mostraba repetido reporte por reporte (una IP que
+    reapareció en 10 informes salía 10 veces), ahora una fila por IP con su volumen total y tasa de
+    SPF/DKIM en el rango elegido.
+
+    Agregado con una sola consulta SQL (GROUP BY source_ip) — mismo motivo que get_trends_data/
+    list_dmarc_reports, evitar recorrer report.records en Python. El filtro `estado` (post-agregación,
+    en Python) es liviano porque ya opera sobre remitentes únicos, no sobre records crudos — mismo
+    patrón que list_dmarc_reports().
+
+    "con_fallas" se define sobre `dmarc_aligned` (SPF **o** DKIM alineado, ya calculado al ingerir el
+    reporte — services/reports_service.py), no sobre spf_aligned/dkim_aligned por separado: DMARC pasa
+    si cualquiera de los dos alinea, así que un remitente con SPF 100% y DKIM roto nunca falló DMARC de
+    verdad (es el mismo correo que se dejaría pasar igual con política en quarantine/reject) y no debe
+    aparecer como "con fallas" aunque DKIM sí haya fallado.
+
+    `days=None` = sin límite de fecha. `q` busca por organización (ASN) o IP."""
+    cutoff = None if days is None else utcnow() - timedelta(days=days)
+
+    query = (
+        db.session.query(
+            AggregateRecord.source_ip,
+            func.max(AggregateRecord.source_asn_org).label("source_asn_org"),
+            func.max(AggregateRecord.source_country).label("source_country"),
+            func.sum(AggregateRecord.count).label("total"),
+            func.sum(case((AggregateRecord.spf_aligned.is_(True), AggregateRecord.count), else_=0)).label("spf_pass"),
+            func.sum(case((AggregateRecord.spf_aligned.is_(False), AggregateRecord.count), else_=0)).label("spf_fail"),
+            func.sum(case((AggregateRecord.dkim_aligned.is_(True), AggregateRecord.count), else_=0)).label("dkim_pass"),
+            func.sum(case((AggregateRecord.dkim_aligned.is_(False), AggregateRecord.count), else_=0)).label("dkim_fail"),
+            func.sum(case((AggregateRecord.dmarc_aligned.is_(False), AggregateRecord.count), else_=0)).label("dmarc_fail"),
+            func.min(AggregateReport.date_begin).label("first_seen"),
+            func.max(AggregateReport.date_begin).label("last_seen"),
+        )
+        .join(AggregateReport, AggregateRecord.report_id == AggregateReport.id)
+        .filter(AggregateReport.monitored_domain_id == monitored.id)
+    )
+    if cutoff is not None:
+        query = query.filter(AggregateReport.date_begin >= cutoff)
+    if q:
+        like = f"%{q.strip().lower()}%"
+        query = query.filter(or_(
+            func.lower(AggregateRecord.source_asn_org).like(like),
+            func.lower(AggregateRecord.source_ip).like(like),
+        ))
+    rows = query.group_by(AggregateRecord.source_ip).all()
+
+    items = []
+    for row in rows:
+        spf_total = row.spf_pass + row.spf_fail
+        dkim_total = row.dkim_pass + row.dkim_fail
+        has_failures = (row.dmarc_fail or 0) > 0
+        items.append({
+            "source_ip": row.source_ip,
+            "source_asn_org": row.source_asn_org or "sin identificar",
+            "source_country": row.source_country,
+            "total": row.total or 0,
+            "spf_pass": row.spf_pass or 0,
+            "spf_fail": row.spf_fail or 0,
+            "spf_rate": round(row.spf_pass / spf_total * 100, 1) if spf_total else None,
+            "dkim_pass": row.dkim_pass or 0,
+            "dkim_fail": row.dkim_fail or 0,
+            "dkim_rate": round(row.dkim_pass / dkim_total * 100, 1) if dkim_total else None,
+            "first_seen": row.first_seen,
+            "last_seen": row.last_seen,
+            "has_failures": has_failures,
+        })
+
+    if estado == "con_fallas":
+        items = [i for i in items if i["has_failures"]]
+    elif estado == "sin_fallas":
+        items = [i for i in items if not i["has_failures"]]
+
+    items.sort(key=lambda i: i["total"], reverse=True)
+
+    total_items = len(items)
+    per_page = max(1, per_page)
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * per_page
+
+    return {
+        "items": items[start:start + per_page],
+        "total_items": total_items,
+        "page": page,
+        "total_pages": total_pages,
+    }
 
 
 def get_compliance_overview(user_id, days=30):

@@ -1,16 +1,7 @@
 {% extends "layout.html" %}
 {% block title %}Akila - {{ monitored.domain }} // monitoreo{% endblock %}
 {% block content %}
-{% macro verify_badge(label, passed, pass_text, fail_text) %}
-  <span class="relative inline-flex group">
-    <span class="text-[10px] px-1.5 py-0.5 rounded border cursor-help {{ 'border-emerald-200 text-emerald-700' if passed else 'border-rose-200 text-rose-700' }}">{{ label }}</span>
-    <span class="pointer-events-none invisible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-20 w-56 rounded-md bg-white px-2.5 py-2 text-[11px] leading-snug text-zinc-700 shadow-xl opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100">
-      {{ pass_text if passed else fail_text }}
-    </span>
-  </span>
-{% endmacro %}
-
-    <div class="max-w-4xl mx-auto px-6 py-16">
+    <div class="max-w-5xl mx-auto px-6 py-16">
     {% include "partials/monitoring_toggle_status.html" %}
 
     {% if not reports %}
@@ -89,88 +80,24 @@
 
     <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1">Alertas recientes</h2>
     <p class="text-[11px] text-zinc-500 leading-relaxed mb-3 max-w-2xl">
-      Remitentes que enviaron correo en nombre de este dominio pero no están declarados en su SPF. No siempre es un ataque —
-      también aparece cuando se agrega una herramienta nueva (marketing, facturación, etc.) sin sumarla todavía al SPF —
-      pero si no reconoces el remitente, vale la pena investigarlo.
+      Remitentes que enviaron correo en nombre de este dominio pero no están declarados en su SPF (agrupados
+      por organización, no una fila por IP repetida), y cambios de configuración detectados (política DMARC,
+      SPF, selectores DKIM). No siempre es un ataque — también aparece cuando se agrega una herramienta nueva
+      (marketing, facturación, etc.) sin sumarla todavía al SPF — pero si no reconocés el remitente, vale la
+      pena investigarlo.
     </p>
-    {% if alerts %}
-      <p class="text-[11px] text-zinc-400 mb-3">
-        {{ alerts|length }} alerta{{ 's' if alerts|length != 1 }}
-        {%- if alert_groups %} · {{ alert_groups|length }} remitente{{ 's' if alert_groups|length != 1 }} distinto{{ 's' if alert_groups|length != 1 }}{% endif -%}
-        {%- if other_alerts %} · {{ other_alerts|length }} cambio{{ 's' if other_alerts|length != 1 }} de configuración{% endif %}
-      </p>
-    {% endif %}
-    <div class="grid grid-cols-1 gap-3 mb-10">
-      {% for alert in other_alerts %}
-        <div class="rise bg-white rounded-md p-4">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-[10px] tracking-wider border rounded px-1.5 py-0.5 border-amber-200 text-amber-700 bg-amber-50">
-              {{ alert.kind_label }}
-            </span>
-            <span class="text-[10px] text-zinc-400">{{ alert.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-          </div>
-          <p class="text-[12px] text-zinc-700">{{ alert.message }}</p>
-        </div>
-      {% endfor %}
 
-      {% for group in alert_groups %}
-        <details class="rise bg-white rounded-md p-4">
-          <summary class="flex items-center justify-between gap-3 cursor-pointer">
-            <span class="flex items-center gap-2 min-w-0">
-              <span class="text-[10px] tracking-wider border rounded px-1.5 py-0.5 border-rose-200 text-rose-700 bg-rose-50 shrink-0">Remitente desconocido</span>
-              <span class="text-[12px] text-zinc-700 truncate">{{ group.org }}</span>
-              <span class="text-[10px] text-zinc-400 shrink-0">&times;{{ group.count }}</span>
-            </span>
-            <span class="text-[10px] text-zinc-400 shrink-0">última vez {{ group.last_seen.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-          </summary>
-          <div class="mt-3 pt-3 border-t border-zinc-100 space-y-1.5">
-            {% for alert in group.alerts %}
-              <div class="flex items-center justify-between gap-3 text-[11px]">
-                <span class="text-zinc-500 truncate">{{ alert.message }}</span>
-                <span class="text-zinc-400 shrink-0">{{ alert.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-              </div>
-            {% endfor %}
-          </div>
-        </details>
-      {% endfor %}
+    {% include "partials/domain_alerts_table.html" %}
 
-      {% if not other_alerts and not alert_groups %}
-        <p class="text-[12px] text-zinc-400">Sin alertas por ahora — buena señal.</p>
-      {% endif %}
-    </div>
-
-    <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1">Reportes DMARC recibidos</h2>
+    <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1">Remitentes reales</h2>
     <p class="text-[11px] text-zinc-500 leading-relaxed mb-3 max-w-2xl">
-      Un resumen que cada proveedor de correo (Gmail, Outlook, Mimecast, etc.) manda una vez al día: qué IPs enviaron
-      correo en nombre de este dominio, cuántas veces, y si pasaron la validación SPF/DKIM. De aquí sale la información
-      de las alertas de arriba. Las etiquetas <span class="text-emerald-700">spf</span>/<span class="text-emerald-700">dkim</span>
-      en verde indican que ese envío pasó esa validación; en <span class="text-rose-700">rojo</span>, que falló —
-      un fallo aislado no es grave, pero si un mismo remitente falla siempre, vale la pena revisarlo.
+      Cada IP que envió correo en nombre de este dominio, agrupada — no una fila por reporte donde
+      apareció, sino una fila por remitente con su volumen total y qué % de SPF/DKIM pasó en el rango
+      elegido. De aquí sale la información de las alertas de arriba: un fallo aislado no es grave, pero
+      si un mismo remitente falla siempre, vale la pena revisarlo.
     </p>
-    <div class="grid grid-cols-1 gap-3">
-      {% for report in reports %}
-        <div class="rise bg-white rounded-md p-4">
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-[12px] text-zinc-800">{{ report.org_name or 'origen desconocido' }}</span>
-            <span class="text-[10px] text-zinc-400">recibido {{ report.received_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-          </div>
-          {% for record in report.records %}
-            <div class="flex items-center justify-between gap-2 py-1 border-b border-zinc-100 last:border-0">
-              <span class="text-[11px] text-zinc-700 truncate">
-                {{ record.source_ip }}
-                <span class="text-zinc-400">({{ record.source_asn_org or 'sin identificar' }}{% if record.source_country %}, {{ record.source_country }}{% endif %}) &times;{{ record.count }}</span>
-              </span>
-              <span class="flex gap-1 shrink-0">
-                {{ verify_badge('spf', record.spf_aligned, 'Este envío pasó la alineación SPF — el dominio autenticado por SPF coincide con el From: del correo.', 'Este envío NO pasó la alineación SPF — el dominio autenticado por SPF no coincide con el From: del correo.') }}
-                {{ verify_badge('dkim', record.dkim_aligned, 'Este envío pasó la alineación DKIM — la firma DKIM coincide con el dominio del From:.', 'Este envío NO pasó la alineación DKIM — la firma DKIM no coincide con el dominio del From: (o no venía firmado).') }}
-              </span>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <p class="text-[12px] text-zinc-400">Sin reportes todavía.</p>
-      {% endfor %}
-    </div>
+
+    {% include "partials/domain_senders_table.html" %}
 
     <h2 class="text-xs tracking-[0.15em] text-zinc-500 uppercase mb-1 mt-10">Reportes forenses (RUF)</h2>
     <p class="text-[11px] text-zinc-500 leading-relaxed mb-3 max-w-2xl">
