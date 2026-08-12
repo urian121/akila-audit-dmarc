@@ -23,6 +23,7 @@ ordenado del problema más grave al menos grave. También calcula un puntaje gen
 dominio (0 a 100%).
 
 Además:
+
 - Un resumen corto generado con inteligencia artificial, como si te lo explicara un analista.
 - Descarga del reporte completo en PDF, para mandarlo o archivarlo.
 - Una versión de esto mismo disponible como servicio para integrarlo con otras herramientas
@@ -49,6 +50,11 @@ colega) donde se puede:
 - Ver de un vistazo si algún subdominio (facturación, marketing, etc.) está peor configurado
   que el resto.
 - Descargar un PDF con el resumen del panel.
+
+Cada cuenta tiene un límite de cuántos dominios puede tener monitoreando **a la vez** (por
+defecto, 3) — funciona como un plan: si necesitás monitorear más, hay que pausar alguno para
+liberar lugar, o pedir que te suban el límite. Pausar un dominio no borra nada de su historial,
+así que reactivarlo más adelante no pierde información.
 
 ## 3. Alertas automáticas
 
@@ -96,6 +102,7 @@ Una vista dedicada, por dominio, para ver la evolución en el tiempo: cuánto co
 bien día por día, comparado en distintos períodos (última semana, mes, tres meses).
 
 Incluye:
+
 - El estado actual de cada protocolo, consultado en vivo.
 - Un análisis generado con inteligencia artificial que dice, en lenguaje llano, qué tan sana está
   la autenticación del dominio, qué está bien, qué necesita atención y qué es urgente.
@@ -133,6 +140,21 @@ Cada persona tiene su propia cuenta (registro, inicio de sesión, recuperar/camb
 actualizar el correo) y solo ve los dominios que ella misma registró. Los paneles de monitoreo
 por dominio son la excepción a propósito: se comparten por link privado, sin necesitar que la
 otra persona tenga cuenta.
+
+Las cuentas administradoras tienen, además, un panel propio con la lista de todas las cuentas de
+la aplicación (clientes y otros administradores) — con buscador y filtros — y pueden activar o
+desactivar cualquier cuenta. Desactivar a alguien le corta el acceso al instante (aunque ya
+tuviera una sesión abierta), pero no borra nada ni afecta sus dominios monitoreados, que siguen
+vigilándose igual. Por seguridad, nadie puede desactivarse a sí mismo ni desactivar al último
+administrador que quede activo.
+
+Desde ese mismo panel, un administrador también puede editar el plan de cualquier usuario: cuántos
+dominios activos puede tener y hasta cuándo (fecha de vencimiento opcional). Al vencer, el usuario
+vuelve solo al límite por defecto — no hace falta que un admin lo edite a mano para "revertirlo".
+
+La lista de usuarios también muestra, de cada cuenta: cuándo se registró, cuándo fue su última
+sesión iniciada (o "Nunca" si todavía no entró), si está activa o no, y su plan — toda la
+trazabilidad en un solo lugar.
 
 ## 12. Descargas en PDF
 

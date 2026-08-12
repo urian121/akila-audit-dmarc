@@ -1,0 +1,91 @@
+{% extends "layout.html" %}
+{% block title %}Akila - Plan de {{ target_user.name or target_user.email }}{% endblock %}
+{% block content %}
+    <div class="max-w-4xl mx-auto px-6 py-16">
+    <div class="bg-white rounded-md p-6 sm:p-8">
+      <a href="{{ url_for('admin_users') }}" class="inline-flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-[#2d2147] mb-4 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        Volver a usuarios
+      </a>
+      <h1 class="text-2xl text-zinc-900 tracking-tight mb-1">Plan de {{ target_user.name or target_user.email }}</h1>
+      <p class="text-sm text-zinc-500 leading-relaxed mb-8">
+        Límite de dominios activos que puede tener en monitoreo, y hasta cuándo aplica. Si ya tiene
+        dominios activos por encima del límite que pongas acá, no se desactiva ninguno — el límite
+        solo se aplica la próxima vez que intente activar u otro.
+      </p>
+
+      {% if form_data.is_expired %}
+        <div class="bg-amber-50 rounded-md p-3 mb-6">
+          <p class="text-[12px] text-amber-700">
+            Este plan ya venció — ahora mismo está usando el límite default ({{ default_max_domains }}).
+            Guardar de nuevo (con o sin fecha de vencimiento) lo reactiva.
+          </p>
+        </div>
+      {% endif %}
+
+      <form method="POST" class="flex flex-col gap-4 max-w-sm">
+        <div>
+          <label class="block mb-1.5 text-[10px] tracking-wide uppercase text-zinc-500">
+            Límite de dominios activos <span class="text-[#2d2147]">*</span>
+          </label>
+          <input
+            type="number"
+            name="max_domains"
+            min="1"
+            step="1"
+            required
+            value="{{ form_data.max_domains }}"
+            class="w-full bg-white rounded-md px-4 py-3 text-sm text-zinc-900 outline-none border border-zinc-200 focus:border-[#2d2147]/60 transition-colors"
+          />
+        </div>
+        <div>
+          <label class="block mb-1.5 text-[10px] tracking-wide uppercase text-zinc-500">
+            Vence el (opcional)
+          </label>
+          <input
+            type="date"
+            name="expires_at"
+            value="{{ form_data.expires_at_input }}"
+            class="w-full bg-white rounded-md px-4 py-3 text-sm text-zinc-900 outline-none border border-zinc-200 focus:border-[#2d2147]/60 transition-colors"
+          />
+          <p class="mt-1.5 text-[10.5px] text-zinc-400 leading-snug">
+            Vacío = sin vencimiento (permanente). Al vencer, vuelve solo al límite default
+            ({{ default_max_domains }}) — no hace falta borrar el plan a mano.
+          </p>
+        </div>
+        <button
+          type="submit"
+          class="self-start mt-1 inline-flex items-center gap-1.5 px-5 py-2.5 rounded-md bg-[#2d2147] hover:bg-[#2d2147]/90 text-white text-xs font-semibold tracking-wide transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+          Guardar plan
+        </button>
+      </form>
+    </div>
+    </div>
+{% endblock %}
+
+{% block head_extra %}
+  {% if success or error %}
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        {% if success %}
+          showToast.success({{ success | tojson }}, {
+            duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+          });
+        {% elif error %}
+          showToast.error({{ error | tojson }}, {
+            duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+          });
+        {% endif %}
+      });
+    </script>
+  {% endif %}
+{% endblock %}

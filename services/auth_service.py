@@ -1,4 +1,8 @@
-from models import User, db
+from sqlalchemy import func, or_
+
+from models import User, UserPlan, db
+from models.monitoring import utcnow
+from services.monitoring_service import get_max_domains
 
 
 def register_user(name, email, password):
@@ -48,3 +52,73 @@ def update_password(user, current_password, new_password):
     user.set_password(new_password)
     db.session.commit()
     return True, None
+
+
+def list_users(rol="todos", estado="todos", q="", page=1, per_page=20):
+    """Lista paginada y filtrable de cuentas, para el panel de administración: rol (admin/cliente/
+    todos), estado (activos/inactivos/todos), búsqueda por nombre o correo. Incluye cuántos
+    dominios monitoreados tiene cada una.
+
+    Sin agregación SQL en lote (a diferencia de monitoring_service.py) a propósito: esta tabla es de
+    cuentas de la aplicación, no de reportes/records — un volumen muy chico, no hace falta."""
+    query = User.query
+    if rol == "admin":
+        query = query.filter_by(is_admin=True)
+    elif rol == "cliente":
+        query = query.filter_by(is_admin=False)
+    if estado == "activos":
+        query = query.filter_by(is_active=True)
+    elif estado == "inactivos":
+        query = query.filter_by(is_active=False)
+    if q:
+        like = f"%{q.strip().lower()}%"
+        query = query.filter(or_(func.lower(User.name).like(like), func.lower(User.email).like(like)))
+    users = query.order_by(User.created_at.desc()).all()
+
+    items = []
+    for u in users:
+        plan = UserPlan.query.filter_by(user_id=u.id).first()
+        items.append({
+            "user": u,
+            "domain_count": u.domains.count(),
+            "plan_max_domains": get_max_domains(u.id),
+            "plan_expires_label": plan.expires_at.strftime("%d-%m-%Y") if plan and plan.expires_at else None,
+            "plan_is_expired": bool(plan and plan.expires_at and plan.expires_at < utcnow()),
+        })
+
+    total_items = len(items)
+    per_page = max(1, per_page)
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * per_page
+
+    return {
+        "items": items[start:start + per_page],
+        "total_items": total_items,
+        "page": page,
+        "total_pages": total_pages,
+    }
+
+
+def set_user_active(user_id, is_active, current_user_id):
+    """Activa o desactiva una cuenta (no borra nada — reversible). Devuelve (user, error): error es
+    None si salió bien, "self" si intentó desactivarse a sí mismo, o "last_admin" si es el último
+    admin activo (ninguna de las dos está permitida, para no dejar la cuenta sin nadie que pueda
+    revertirlo). `user` viene con los datos sin cambiar en ambos casos de error."""
+    user = User.query.get(user_id)
+    if not user:
+        return None, None
+
+    if not is_active:
+        if user.id == current_user_id:
+            return user, "self"
+        if user.is_admin:
+            other_active_admins = User.query.filter(
+                User.is_admin.is_(True), User.is_active.is_(True), User.id != user.id
+            ).count()
+            if other_active_admins == 0:
+                return user, "last_admin"
+
+    user.is_active = is_active
+    db.session.commit()
+    return user, None

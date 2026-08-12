@@ -85,5 +85,19 @@
       </svg>
       Documentación DMARC
     </a>
+
+    {% if current_user.is_authenticated and current_user.is_admin %}
+      <p class="px-3 mb-2 mt-4 text-[10px] tracking-[0.2em] text-zinc-400 uppercase">Administración</p>
+
+      <a href="{{ url_for('admin_users') }}" class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[12px] tracking-wide mb-1 transition-colors {{ 'bg-[#2d2147] text-white font-semibold' if request.endpoint == 'admin_users' else 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900' }}">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+        Usuarios
+      </a>
+    {% endif %}
   </nav>
 </aside>

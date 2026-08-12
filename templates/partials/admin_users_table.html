@@ -1,0 +1,148 @@
+<div id="admin-users-table">
+  <form
+    id="admin-users-filters-form"
+    hx-get="{{ url_for('admin_users_list') }}"
+    hx-target="#admin-users-table"
+    hx-swap="outerHTML"
+    hx-trigger="change, input delay:300ms"
+    class="bg-white rounded-md p-4 mb-4"
+  >
+    <div class="flex flex-wrap items-center gap-3 mb-3">
+      <span class="text-[11px] text-zinc-500 shrink-0">{{ users_table['total_items'] }} usuario{{ '' if users_table['total_items'] == 1 else 's' }}</span>
+
+      <div class="inline-flex bg-zinc-100 rounded-md p-1">
+        {% for opt, label in [('todos', 'Todos'), ('admin', 'Administradores'), ('cliente', 'Clientes')] %}
+          <label class="cursor-pointer">
+            <input type="radio" name="rol" value="{{ opt }}" class="peer sr-only" {% if rol == opt %}checked{% endif %}>
+            <span class="inline-block px-3 py-1.5 rounded text-xs font-medium tracking-wide text-zinc-500 peer-checked:bg-[#2d2147] peer-checked:text-white transition-colors">{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <div class="inline-flex bg-zinc-100 rounded-md p-1">
+        {% for opt, label in [('todos', 'Todos'), ('activos', 'Activos'), ('inactivos', 'Inactivos')] %}
+          <label class="cursor-pointer">
+            <input type="radio" name="estado" value="{{ opt }}" class="peer sr-only" {% if estado == opt %}checked{% endif %}>
+            <span class="inline-block px-3 py-1.5 rounded text-xs font-medium tracking-wide text-zinc-500 peer-checked:bg-[#2d2147] peer-checked:text-white transition-colors">{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <input
+        type="text"
+        name="q"
+        value="{{ q }}"
+        placeholder="Buscar nombre o correo…"
+        class="flex-1 min-w-[200px] ml-auto bg-white border border-zinc-200 rounded-md px-3 py-2 text-[12px] text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-[#2d2147]/60 transition-colors"
+      >
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[720px] text-[12px] text-left">
+        <thead>
+          <tr class="text-zinc-500 uppercase text-[10px] tracking-wide border-t border-zinc-100">
+            <th class="px-3 py-2.5 whitespace-nowrap">Nombre</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Correo</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Rol</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Dominios</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Plan</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Registrado el</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Última sesión</th>
+            <th class="px-3 py-2.5 whitespace-nowrap">Estado</th>
+            <th class="px-3 py-2.5 whitespace-nowrap"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in users_table['items'] %}
+            {% set u = row.user %}
+            <tr class="border-t border-zinc-100 hover:bg-zinc-50 transition-colors">
+              <td class="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{{ u.name or '—' }}</td>
+              <td class="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{{ u.email }}</td>
+              <td class="px-3 py-2.5 whitespace-nowrap">
+                <span class="text-[10px] tracking-wider border rounded px-1.5 py-0.5 {{ 'border-[#2d2147]/40 text-[#2d2147] bg-[#2d2147]/[0.06]' if u.is_admin else 'border-zinc-200 text-zinc-500' }}">
+                  {{ 'Administrador' if u.is_admin else 'Cliente' }}
+                </span>
+              </td>
+              <td class="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{{ row.domain_count }}</td>
+              <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
+                {{ row.plan_max_domains }} dominio{{ '' if row.plan_max_domains == 1 else 's' }}
+                {%- if row.plan_expires_label %}
+                  <span class="{{ 'text-amber-600' if row.plan_is_expired else 'text-zinc-400' }}">
+                    · {{ 'venció' if row.plan_is_expired else 'vence' }} {{ row.plan_expires_label }}
+                  </span>
+                {% endif %}
+              </td>
+              <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{{ u.created_at.strftime('%d-%m-%Y') }}</td>
+              <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
+                {{ u.last_login_at.strftime('%d-%m-%Y %H:%M') if u.last_login_at else 'Nunca' }}
+              </td>
+              <td class="px-3 py-2.5 whitespace-nowrap">
+                <span class="text-[10px] tracking-wider border rounded px-1.5 py-0.5 {{ 'border-emerald-200 text-emerald-700 bg-emerald-50' if u.is_active else 'text-zinc-500 bg-zinc-100' }}">
+                  {{ 'ACTIVO' if u.is_active else 'INACTIVO' }}
+                </span>
+              </td>
+              <td class="px-3 py-2.5 whitespace-nowrap">
+                <div class="flex items-center gap-3">
+                  <a
+                    href="{{ url_for('admin_edit_plan', user_id=u.id) }}"
+                    class="text-[11px] tracking-wide uppercase text-zinc-600 hover:text-[#2d2147] transition-colors"
+                  >Editar plan</a>
+                  <form
+                    hx-post="{{ url_for('admin_toggle_user', user_id=u.id) }}"
+                    hx-include="#admin-users-filters-form"
+                    hx-target="#admin-users-table"
+                    hx-swap="outerHTML"
+                  >
+                    <input type="hidden" name="activar" value="{{ '0' if u.is_active else '1' }}">
+                    <button
+                      type="submit"
+                      class="text-[11px] tracking-wide uppercase text-zinc-600 hover:text-[#2d2147] transition-colors"
+                    >{{ 'Desactivar' if u.is_active else 'Activar' }}</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="9" class="px-3 py-6 text-center text-zinc-400">Ningún usuario coincide con este filtro.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+
+  {% if users_table['total_pages'] > 1 %}
+    <div class="flex items-center justify-between mb-6">
+      <button
+        type="button"
+        hx-get="{{ url_for('admin_users_list') }}"
+        hx-include="#admin-users-filters-form"
+        hx-vals='{"page": {{ users_table['page'] - 1 }}}'
+        hx-target="#admin-users-table"
+        hx-swap="outerHTML"
+        {{ 'disabled' if users_table['page'] <= 1 }}
+        class="px-3 py-1.5 rounded-md text-xs bg-white {{ 'text-zinc-300 pointer-events-none' if users_table['page'] <= 1 else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+      >← Anterior</button>
+      <span class="text-[11px] text-zinc-400">página {{ users_table['page'] }} de {{ users_table['total_pages'] }}</span>
+      <button
+        type="button"
+        hx-get="{{ url_for('admin_users_list') }}"
+        hx-include="#admin-users-filters-form"
+        hx-vals='{"page": {{ users_table['page'] + 1 }}}'
+        hx-target="#admin-users-table"
+        hx-swap="outerHTML"
+        {{ 'disabled' if users_table['page'] >= users_table['total_pages'] }}
+        class="px-3 py-1.5 rounded-md text-xs bg-white {{ 'text-zinc-300 pointer-events-none' if users_table['page'] >= users_table['total_pages'] else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+      >Siguiente →</button>
+    </div>
+  {% endif %}
+</div>
+
+{% if toggle_message %}
+  <script>
+    showToast.{{ toggle_toast_type }}({{ toggle_message | tojson }}, {
+      duration: 5000, position: "top-right", transition: "swingInverted", icon: "", sound: true,
+    });
+  </script>
+{% endif %}

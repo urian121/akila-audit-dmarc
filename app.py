@@ -1,6 +1,7 @@
 import os
 import secrets
 from datetime import datetime, timezone
+from functools import wraps
 
 from dotenv import load_dotenv
 from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
@@ -8,13 +9,14 @@ from flask_login import LoginManager, current_user, login_required, login_user, 
 
 from models import DomainSnapshot, User, db
 from services.ai_summary import generate_summary
-from services.auth_service import authenticate, register_user, update_email, update_password
+from services.auth_service import authenticate, list_users, register_user, set_user_active, update_email, update_password
 from services.card_builder import DMARC_POLICY_LABELS, build_cards, build_risks, build_summary
 from services.checkdmarc_service import build_dns_screen_data, run_check
 from services.domain_health_analysis import generate_health_analysis
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
-from services.monitoring_service import get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_report_breakdown, get_subdomain_breakdown, get_trends_data, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, verify_dns, verify_tls_rpt
+from models.user import DEFAULT_MAX_DOMAINS
+from services.monitoring_service import get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
 from services.forensic_reports_service import ingest_forensic_report
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
@@ -48,6 +50,32 @@ def handle_unauthorized():
     if request.path == "/" and not request.query_string:
         return redirect(url_for("auth_login"))
     return redirect(url_for("auth_login", next=request.full_path.rstrip("?")))
+
+
+@app.before_request
+def reject_deactivated_sessions():
+    """Si una cuenta se desactiva mientras alguien ya tiene sesión iniciada, esa sesión existente
+    deja de poder hacer nada de inmediato — Flask-Login por sí solo no revisa esto en cada request
+    (`login_required`/`current_user.is_authenticated` sólo confirman que hay sesión, no que la
+    cuenta siga activa), así que sin este chequeo desactivar a alguien sólo bloquearía su próximo
+    login, no la sesión que ya tenía abierta."""
+    if current_user.is_authenticated and not current_user.is_active:
+        logout_user()
+        return redirect(url_for("auth_login"))
+
+
+def admin_required(view):
+    """Como @login_required pero además exige is_admin — 404 (no 403) para no confirmar que la
+    ruta existe a quien inicie sesión sin ser admin, mismo criterio que el resto de la app
+    (ej. el webhook de parsedmarc)."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return login_manager.unauthorized()
+        if not current_user.is_admin:
+            abort(404)
+        return view(*args, **kwargs)
+    return wrapped
 
 
 @app.errorhandler(404)
@@ -210,6 +238,8 @@ def auth_register():
         return render_template("auth/register.html", error=error, name=name, email=email)
 
     login_user(user)
+    user.last_login_at = datetime.now(timezone.utc)
+    db.session.commit()
     return redirect(url_for("inicio"))
 
 
@@ -227,8 +257,12 @@ def auth_login():
     user = authenticate(email, password)
     if not user:
         return render_template("auth/login.html", error="Correo o contraseña incorrectos.", email=email)
+    if not user.is_active:
+        return render_template("auth/login.html", error="Esta cuenta fue desactivada. Contactá al administrador.", email=email)
 
     login_user(user)
+    user.last_login_at = datetime.now(timezone.utc)
+    db.session.commit()
     next_url = request.args.get("next")
     return redirect(next_url or url_for("inicio"))
 
@@ -271,6 +305,117 @@ def account_update_password():
     return render_template("auth/account.html", password_success="Contraseña actualizada.")
 
 
+@app.route("/admin/usuarios", methods=["GET"])
+@admin_required
+def admin_users():
+    """Panel de administración: lista de cuentas (clientes y administradores), solo para admins."""
+    users_table = list_users()
+    return render_template(
+        "admin/users.html", users_table=users_table, rol="todos", estado="todos", q="",
+    )
+
+
+@app.route("/admin/usuarios/lista", methods=["GET"])
+@admin_required
+def admin_users_list():
+    """Fragmento htmx: tabla de usuarios filtrada/paginada — separada de admin_users para que
+    cambiar un filtro solo recalcule la tabla, mismo patrón que las demás tablas de la app."""
+    rol = request.args.get("rol", "todos")
+    estado = request.args.get("estado", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    users_table = list_users(rol=rol, estado=estado, q=q, page=page)
+    return render_template(
+        "partials/admin_users_table.html", users_table=users_table, rol=rol, estado=estado, q=q,
+    )
+
+
+@app.route("/admin/usuarios/<int:user_id>/toggle", methods=["POST"])
+@admin_required
+def admin_toggle_user(user_id):
+    """htmx: activa o desactiva una cuenta y devuelve la tabla actualizada con los mismos filtros
+    que tenía (mandados por hx-include desde el form de filtros), más un toast de confirmación o error."""
+    activar = request.form.get("activar") == "1"
+    user, error = set_user_active(user_id, activar, current_user.id)
+    if user is None:
+        return render_template("partials/error.html", message="No se encontró ese usuario."), 404
+
+    rol = request.form.get("rol", "todos")
+    estado = request.form.get("estado", "todos")
+    q = request.form.get("q", "").strip()
+    page = request.form.get("page", 1, type=int) or 1
+    users_table = list_users(rol=rol, estado=estado, q=q, page=page)
+
+    if error == "self":
+        toggle_message = "No podés desactivar tu propia cuenta."
+        toggle_toast_type = "error"
+    elif error == "last_admin":
+        toggle_message = "No podés desactivar al último administrador activo."
+        toggle_toast_type = "error"
+    else:
+        toggle_message = f"Cuenta {'activada' if activar else 'desactivada'} correctamente."
+        toggle_toast_type = "success" if activar else "warning"
+
+    return render_template(
+        "partials/admin_users_table.html", users_table=users_table, rol=rol, estado=estado, q=q,
+        toggle_message=toggle_message, toggle_toast_type=toggle_toast_type,
+    )
+
+
+@app.route("/admin/usuarios/<int:user_id>/plan", methods=["GET", "POST"])
+@admin_required
+def admin_edit_plan(user_id):
+    """Formulario para que un admin edite el límite de dominios activos y la fecha de vencimiento
+    del plan de cualquier usuario — crea el UserPlan si todavía no tenía uno propio."""
+    target_user = User.query.get(user_id)
+    if target_user is None:
+        abort(404)
+
+    if request.method == "GET":
+        form_data = get_user_plan_form_data(user_id)
+        return render_template(
+            "admin/edit_plan.html", target_user=target_user, form_data=form_data,
+            default_max_domains=DEFAULT_MAX_DOMAINS,
+        )
+
+    max_domains_raw = request.form.get("max_domains", "").strip()
+    expires_at_raw = request.form.get("expires_at", "").strip()
+
+    error = None
+    try:
+        max_domains = int(max_domains_raw)
+        if max_domains < 1:
+            error = "El límite debe ser un número entero de al menos 1."
+    except ValueError:
+        max_domains = None
+        error = "Ingresa un número entero válido para el límite."
+
+    expires_at = None
+    if not error and expires_at_raw:
+        try:
+            expires_at = datetime.strptime(expires_at_raw, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=timezone.utc
+            )
+        except ValueError:
+            error = "Fecha de vencimiento inválida."
+
+    if not error:
+        _plan, error = update_user_plan(user_id, max_domains, expires_at)
+
+    form_data = get_user_plan_form_data(user_id) if not error else {
+        "max_domains": max_domains_raw, "expires_at_input": expires_at_raw, "is_expired": False,
+    }
+    if error:
+        return render_template(
+            "admin/edit_plan.html", target_user=target_user, form_data=form_data,
+            default_max_domains=DEFAULT_MAX_DOMAINS, error=error,
+        ), 400
+    return render_template(
+        "admin/edit_plan.html", target_user=target_user, form_data=form_data,
+        default_max_domains=DEFAULT_MAX_DOMAINS, success="Plan actualizado correctamente.",
+    )
+
+
 @app.route("/monitoreo", methods=["GET", "POST"])
 @login_required
 def monitoring_register():
@@ -294,11 +439,18 @@ def monitoring_register():
             domain=domain, owner_email=owner_email,
         )
 
-    monitored, created = register_domain(domain, owner_email, current_user.id)
-    if monitored is None:
+    monitored, created, error = register_domain(domain, owner_email, current_user.id)
+    if error == "other_user":
         return render_template(
             "monitoring/register.html",
             error="Ese dominio ya está siendo monitoreado por otra cuenta.",
+            domain=domain, owner_email=owner_email,
+        )
+    if error == "limit_reached":
+        limit = get_max_domains(current_user.id)
+        return render_template(
+            "monitoring/register.html",
+            error=f"Alcanzaste el límite de {limit} dominios activos de tu plan. Desactivá alguno desde \"Monitores\" para poder registrar otro.",
             domain=domain, owner_email=owner_email,
         )
     dns, extra_dns = build_dns_screen_data(domain, DMARC_REPORTS_MAILBOX)
@@ -635,11 +787,19 @@ def monitoring_toggle(access_token):
     queda desconectado del DOM justo cuando se reemplaza #toggle-status-region (swap outerHTML),
     así que nunca llega a burbujear hasta un listener en document.body."""
     activar = request.form.get("activar") == "1"
-    monitored = set_active(access_token, activar)
+    monitored, error = set_active(access_token, activar)
     if monitored is None:
         return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
 
     data = get_dashboard_data(access_token)
+    if error == "limit_reached":
+        limit = get_max_domains(monitored.user_id)
+        return render_template(
+            "partials/monitoring_toggle_status.html",
+            monitored=monitored, reports=data["reports"],
+            toggle_message=f"No se pudo activar: alcanzaste el límite de {limit} dominios activos de tu plan.",
+            toggle_toast_type="error",
+        )
     return render_template(
         "partials/monitoring_toggle_status.html",
         monitored=monitored, reports=data["reports"],

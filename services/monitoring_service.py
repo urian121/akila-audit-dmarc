@@ -4,7 +4,8 @@ from datetime import timedelta
 
 from sqlalchemy import case, func, or_
 
-from models import Alert, AggregateRecord, AggregateReport, DomainSnapshot, ForensicReport, MonitoredDomain, db
+from models import Alert, AggregateRecord, AggregateReport, DomainSnapshot, ForensicReport, MonitoredDomain, User, UserPlan, db
+from models.user import DEFAULT_MAX_DOMAINS
 from models.monitoring import utcnow
 from services.card_builder import DMARC_POLICY_LABELS, build_summary
 from services.checkdmarc_service import dns_has_mailbox_in_rua, dns_has_mailbox_in_tls_rpt_rua, run_check
@@ -15,23 +16,81 @@ from services.checkdmarc_service import dns_has_mailbox_in_rua, dns_has_mailbox_
 _UNKNOWN_SENDER_ORG_PATTERN = re.compile(r"^Correo enviado desde (.+?) \(")
 
 
-def register_domain(domain, owner_email, user_id):
-    """Da de alta un dominio para monitoreo continuo bajo `user_id`; si ya estaba registrado por el mismo usuario pero inactivo, lo reactiva.
+def get_max_domains(user_id):
+    """Límite de dominios ACTIVOS que puede tener este usuario — el de su UserPlan si tiene uno
+    asignado y no venció, o DEFAULT_MAX_DOMAINS si no tiene uno o si ya venció (vuelve sola al
+    default, no bloquea todo — ver comentario en UserPlan.expires_at)."""
+    plan = UserPlan.query.filter_by(user_id=user_id).first()
+    if not plan or (plan.expires_at and plan.expires_at < utcnow()):
+        return DEFAULT_MAX_DOMAINS
+    return plan.max_domains
 
-    Devuelve (None, False) si el dominio ya está registrado por otro usuario.
+
+def get_user_plan_form_data(user_id):
+    """Valores actuales del plan de un usuario, para precargar el formulario de edición del admin
+    — el default si todavía no tiene una fila propia en UserPlan."""
+    plan = UserPlan.query.filter_by(user_id=user_id).first()
+    if not plan:
+        return {"max_domains": DEFAULT_MAX_DOMAINS, "expires_at_input": "", "is_expired": False}
+    is_expired = bool(plan.expires_at and plan.expires_at < utcnow())
+    return {
+        "max_domains": plan.max_domains,
+        "expires_at_input": plan.expires_at.strftime("%Y-%m-%d") if plan.expires_at else "",
+        "is_expired": is_expired,
+    }
+
+
+def update_user_plan(user_id, max_domains, expires_at):
+    """Crea o actualiza (upsert) el plan de un usuario — sólo lo llama el admin desde
+    /admin/usuarios/<id>/plan. `expires_at` ya viene como datetime (o None para sin vencimiento),
+    parseado por la ruta. Devuelve (plan, error)."""
+    if not User.query.get(user_id):
+        return None, "No se encontró ese usuario."
+    if max_domains < 1:
+        return None, "El límite debe ser un número entero de al menos 1."
+
+    plan = UserPlan.query.filter_by(user_id=user_id).first()
+    if not plan:
+        plan = UserPlan(user_id=user_id)
+        db.session.add(plan)
+    plan.max_domains = max_domains
+    plan.expires_at = expires_at
+    db.session.commit()
+    return plan, None
+
+
+def count_active_domains(user_id):
+    """Cuántos dominios tiene este usuario con is_active=True ahora mismo — lo que cuenta contra su límite."""
+    return MonitoredDomain.query.filter_by(user_id=user_id, is_active=True).count()
+
+
+def register_domain(domain, owner_email, user_id):
+    """Da de alta un dominio para monitoreo continuo bajo `user_id`; si ya estaba registrado por el
+    mismo usuario pero inactivo, lo reactiva. Antes de crear una fila nueva o reactivar una pausada
+    (ambos casos suman un dominio activo) valida el límite de su plan — reactivar uno que ya está
+    activo (re-envío del mismo formulario) no cuenta de nuevo.
+
+    Devuelve (monitored, created, error). `error` es None si salió bien, "other_user" si el dominio
+    ya está registrado por otra cuenta, o "limit_reached" si el usuario ya está en su límite de
+    dominios activos (`monitored` viene None en ambos casos de error).
     """
     existing = MonitoredDomain.query.filter_by(domain=domain).first()
     if existing:
         if existing.user_id != user_id:
-            return None, False
+            return None, False, "other_user"
         if not existing.is_active:
+            if count_active_domains(user_id) >= get_max_domains(user_id):
+                return None, False, "limit_reached"
             existing.is_active = True
             db.session.commit()
-        return existing, False
+        return existing, False, None
+
+    if count_active_domains(user_id) >= get_max_domains(user_id):
+        return None, False, "limit_reached"
     monitored = MonitoredDomain(domain=domain, owner_email=owner_email, user_id=user_id)
     db.session.add(monitored)
     db.session.commit()
-    return monitored, True
+    return monitored, True, None
 
 
 def get_domain_by_token(access_token):
@@ -62,13 +121,21 @@ def verify_tls_rpt(access_token, mailbox):
 
 
 def set_active(access_token, is_active):
-    """Activa o desactiva el monitoreo de un dominio (no borra su historial). Devuelve None si el token no existe."""
+    """Activa o desactiva el monitoreo de un dominio (no borra su historial).
+
+    Devuelve (monitored, error). `monitored` es None sólo si el token no existe. Si se intenta
+    activar y el usuario ya está en su límite de dominios activos, no lo activa y devuelve el
+    `monitored` sin cambios junto con error="limit_reached" (dominios sin dueño —`user_id` nulo,
+    legado de antes del login— no tienen plan que hacer cumplir, se activan sin chequeo)."""
     monitored = MonitoredDomain.query.filter_by(access_token=access_token).first()
     if not monitored:
-        return None
+        return None, None
+    if is_active and not monitored.is_active and monitored.user_id is not None:
+        if count_active_domains(monitored.user_id) >= get_max_domains(monitored.user_id):
+            return monitored, "limit_reached"
     monitored.is_active = is_active
     db.session.commit()
-    return monitored
+    return monitored, None
 
 
 def list_domains(user_id):
