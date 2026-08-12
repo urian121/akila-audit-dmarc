@@ -65,11 +65,15 @@
               </td>
               <td class="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{{ row.domain_count }}</td>
               <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
-                {{ row.plan_max_domains }} dominio{{ '' if row.plan_max_domains == 1 else 's' }}
-                {%- if row.plan_expires_label %}
-                  <span class="{{ 'text-amber-600' if row.plan_is_expired else 'text-zinc-400' }}">
-                    · {{ 'venció' if row.plan_is_expired else 'vence' }} {{ row.plan_expires_label }}
-                  </span>
+                {% if row.plan_max_domains is none %}
+                  Ilimitado
+                {% else %}
+                  {{ row.plan_max_domains }} dominio{{ '' if row.plan_max_domains == 1 else 's' }}
+                  {%- if row.plan_expires_label %}
+                    <span class="{{ 'text-amber-600' if row.plan_is_expired else 'text-zinc-400' }}">
+                      · {{ 'venció' if row.plan_is_expired else 'vence' }} {{ row.plan_expires_label }}
+                    </span>
+                  {% endif %}
                 {% endif %}
               </td>
               <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{{ u.created_at.strftime('%d-%m-%Y') }}</td>

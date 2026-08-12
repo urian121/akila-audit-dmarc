@@ -209,38 +209,12 @@
               </div>
             {% endif %}
 
-            {% if impact.affected_senders %}
-              <h3 class="text-[11px] text-zinc-600 font-semibold mb-1">Emisores que se verían afectados ({{ impact.affected_senders | length }})</h3>
+            {% if affected_table.total_items > 0 %}
+              <h3 class="text-[11px] text-zinc-600 font-semibold mb-1">Emisores que se verían afectados</h3>
               <p class="text-[11px] text-zinc-500 leading-relaxed mb-3">
                 Estas fuentes no pasan SPF ni DKIM. Con <span id="objetivo-frase">cuarentena</span>, sus mensajes <span id="objetivo-accion">se enviarían a spam</span>.
               </p>
-              <div class="overflow-x-auto">
-                <table class="w-full text-[12px] text-left">
-                  <thead>
-                    <tr class="text-zinc-500 uppercase text-[10px] tracking-wide">
-                      <th class="px-3 py-2">IP de origen</th>
-                      <th class="px-3 py-2">Servicio</th>
-                      <th class="px-3 py-2">Mensajes</th>
-                      <th class="px-3 py-2">SPF</th>
-                      <th class="px-3 py-2">DKIM</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for s in impact.affected_senders[:20] %}
-                      <tr class="border-t border-zinc-100">
-                        <td class="px-3 py-2 text-zinc-700">{{ s.source_ip }}</td>
-                        <td class="px-3 py-2"><span class="text-[10px] bg-zinc-100 text-zinc-600 rounded px-1.5 py-0.5">{{ s.source_asn_org }}</span></td>
-                        <td class="px-3 py-2 text-zinc-700">{{ s.count }}</td>
-                        <td class="px-3 py-2"><span class="text-[10px] text-rose-700 bg-rose-50 rounded px-1.5 py-0.5">Fallido</span></td>
-                        <td class="px-3 py-2"><span class="text-[10px] text-rose-700 bg-rose-50 rounded px-1.5 py-0.5">Fallido</span></td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-                {% if impact.affected_senders | length > 20 %}
-                  <p class="text-[10px] text-zinc-400 mt-2">+{{ impact.affected_senders | length - 20 }} emisores más.</p>
-                {% endif %}
-              </div>
+              {% include "partials/affected_senders_table.html" %}
             {% endif %}
           </div>
         {% endif %}
@@ -370,7 +344,7 @@
       });
     </script>
   {% endif %}
-  {% if impact and impact.affected_senders %}
+  {% if impact and affected_table.total_items > 0 %}
     <script>
       function setObjetivoImpacto(target) {
         const isReject = target === 'rechazar';

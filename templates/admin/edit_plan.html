@@ -17,6 +17,15 @@
         solo se aplica la próxima vez que intente activar u otro.
       </p>
 
+      {% if target_user.is_admin %}
+        <div class="bg-[#2d2147]/[0.06] rounded-md p-3 mb-6">
+          <p class="text-[12px] text-[#2d2147]">
+            Esta cuenta es administradora — no tiene límite de dominios sin importar lo que
+            guardes acá. Solo tendría efecto si en algún momento deja de ser admin.
+          </p>
+        </div>
+      {% endif %}
+
       {% if form_data.is_expired %}
         <div class="bg-amber-50 rounded-md p-3 mb-6">
           <p class="text-[12px] text-amber-700">

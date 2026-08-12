@@ -32,9 +32,11 @@ def _client():
     return OpenAI(api_key=api_key)
 
 
-def _build_prompt(monitored, trend_data, impact, report_breakdown):
+def _build_prompt(monitored, trend_data, impact, report_breakdown, top_affected_senders):
     """Arma el resumen en texto plano que se le manda al modelo, a partir de los datos ya calculados
-    en la página de Tendencias (get_trends_data/get_impact_analysis/get_report_breakdown)."""
+    en la página de Tendencias (get_trends_data/get_impact_analysis/get_report_breakdown) más los
+    primeros remitentes afectados (list_affected_senders(), calculado aparte porque ya no viene
+    incluido en get_impact_analysis() — esa lista ahora vive paginada en su propia tabla)."""
     lines = [
         f"Dominio: {monitored.domain}",
         f"Política DMARC actual: p={impact.get('current_policy') or 'sin registro DMARC detectado'}",
@@ -51,14 +53,13 @@ def _build_prompt(monitored, trend_data, impact, report_breakdown):
     if report_breakdown.get("orgs"):
         orgs = ", ".join(f"{o['name']} ({o['count']} correos)" for o in report_breakdown["orgs"])
         lines.append(f"Organizaciones que mandaron reportes: {orgs}")
-    if impact.get("affected_senders"):
-        top = impact["affected_senders"][:5]
-        senders = ", ".join(f"{s['source_asn_org']} ({s['count']} correos, IP {s['source_ip']})" for s in top)
+    if top_affected_senders:
+        senders = ", ".join(f"{s['source_asn_org']} ({s['count']} correos, IP {s['source_ip']})" for s in top_affected_senders)
         lines.append(f"Principales remitentes que fallan DMARC hoy (se verían afectados si se refuerza la política): {senders}")
     return "\n".join(lines)
 
 
-def generate_health_analysis(monitored, trend_data, impact, report_breakdown):
+def generate_health_analysis(monitored, trend_data, impact, report_breakdown, top_affected_senders=None):
     """Genera el análisis de salud DMARC del dominio. Devuelve None si la IA no está configurada,
     falla, tarda, o responde algo que no se puede interpretar como el JSON esperado — en cualquiera
     de esos casos el resto de la página de Tendencias sigue funcionando igual, esto es 100% opcional."""
@@ -71,7 +72,7 @@ def generate_health_analysis(monitored, trend_data, impact, report_breakdown):
             model=DEFAULT_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": _build_prompt(monitored, trend_data, impact, report_breakdown)},
+                {"role": "user", "content": _build_prompt(monitored, trend_data, impact, report_breakdown, top_affected_senders or [])},
             ],
             temperature=0.3,
             max_tokens=500,

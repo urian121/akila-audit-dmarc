@@ -17,9 +17,18 @@ _UNKNOWN_SENDER_ORG_PATTERN = re.compile(r"^Correo enviado desde (.+?) \(")
 
 
 def get_max_domains(user_id):
-    """Límite de dominios ACTIVOS que puede tener este usuario — el de su UserPlan si tiene uno
-    asignado y no venció, o DEFAULT_MAX_DOMAINS si no tiene uno o si ya venció (vuelve sola al
-    default, no bloquea todo — ver comentario en UserPlan.expires_at)."""
+    """Límite de dominios ACTIVOS que puede tener este usuario, o None si no tiene límite.
+
+    Los administradores no tienen límite (`None`) — son quienes administran la herramienta, no
+    tiene sentido pedirles un plan para usar su propia cuenta. Para el resto: el de su UserPlan si
+    tiene uno asignado y no venció, o DEFAULT_MAX_DOMAINS si no tiene uno o si ya venció (vuelve
+    sola al default, no bloquea todo — ver comentario en UserPlan.expires_at).
+
+    Todo caller debe tratar `None` como "sin límite" (no comparar directo con `>=`) — ver
+    register_domain()/set_active() más abajo."""
+    user = User.query.get(user_id)
+    if user and user.is_admin:
+        return None
     plan = UserPlan.query.filter_by(user_id=user_id).first()
     if not plan or (plan.expires_at and plan.expires_at < utcnow()):
         return DEFAULT_MAX_DOMAINS
@@ -74,18 +83,19 @@ def register_domain(domain, owner_email, user_id):
     ya está registrado por otra cuenta, o "limit_reached" si el usuario ya está en su límite de
     dominios activos (`monitored` viene None en ambos casos de error).
     """
+    limit = get_max_domains(user_id)
     existing = MonitoredDomain.query.filter_by(domain=domain).first()
     if existing:
         if existing.user_id != user_id:
             return None, False, "other_user"
         if not existing.is_active:
-            if count_active_domains(user_id) >= get_max_domains(user_id):
+            if limit is not None and count_active_domains(user_id) >= limit:
                 return None, False, "limit_reached"
             existing.is_active = True
             db.session.commit()
         return existing, False, None
 
-    if count_active_domains(user_id) >= get_max_domains(user_id):
+    if limit is not None and count_active_domains(user_id) >= limit:
         return None, False, "limit_reached"
     monitored = MonitoredDomain(domain=domain, owner_email=owner_email, user_id=user_id)
     db.session.add(monitored)
@@ -131,7 +141,8 @@ def set_active(access_token, is_active):
     if not monitored:
         return None, None
     if is_active and not monitored.is_active and monitored.user_id is not None:
-        if count_active_domains(monitored.user_id) >= get_max_domains(monitored.user_id):
+        limit = get_max_domains(monitored.user_id)
+        if limit is not None and count_active_domains(monitored.user_id) >= limit:
             return monitored, "limit_reached"
     monitored.is_active = is_active
     db.session.commit()
@@ -341,22 +352,6 @@ def get_impact_analysis(monitored, days=30):
         .scalar()
     ) or 0
 
-    affected_rows = (
-        base.filter(AggregateRecord.dmarc_aligned.is_(False))
-        .with_entities(
-            AggregateRecord.source_ip,
-            func.max(AggregateRecord.source_asn_org).label("source_asn_org"),
-            func.sum(AggregateRecord.count).label("count"),
-        )
-        .group_by(AggregateRecord.source_ip)
-        .order_by(func.sum(AggregateRecord.count).desc())
-        .all()
-    )
-    affected_senders = [
-        {"source_ip": r.source_ip, "source_asn_org": r.source_asn_org or "Desconocido", "count": r.count}
-        for r in affected_rows
-    ]
-
     total = total_pass + total_fail
 
     last_snapshot = monitored.snapshots.order_by(DomainSnapshot.checked_at.desc()).first()
@@ -372,8 +367,56 @@ def get_impact_analysis(monitored, days=30):
         "unique_sources": unique_sources,
         "current_policy": current_policy,
         "policy_step": policy_step,
-        "affected_senders": affected_senders,
         "ready_to_enforce": (total_pass / total * 100 if total else 0) >= 95,
+    }
+
+
+def list_affected_senders(monitored, days=30, q="", page=1, per_page=20):
+    """Lista paginada y filtrable (por IP u organización) de los emisores que fallaron DMARC (ni
+    SPF ni DKIM alinearon) en los últimos `days` días — la tabla detrás de "Emisores que se verían
+    afectados" en el análisis de impacto de Tendencias. Antes era una lista completa sin paginar,
+    recortada a los primeros 20 en el template; con dominios de tráfico alto hay decenas.
+
+    SPF y DKIM siempre se muestran "Fallido" para cada fila acá — no hace falta calcularlo aparte,
+    es la definición misma del filtro (dmarc_aligned=False implica que ninguno de los dos alineó)."""
+    cutoff = utcnow() - timedelta(days=days)
+    query = (
+        db.session.query(
+            AggregateRecord.source_ip,
+            func.max(AggregateRecord.source_asn_org).label("source_asn_org"),
+            func.sum(AggregateRecord.count).label("count"),
+        )
+        .join(AggregateReport, AggregateRecord.report_id == AggregateReport.id)
+        .filter(
+            AggregateReport.monitored_domain_id == monitored.id,
+            AggregateReport.date_begin >= cutoff,
+            AggregateRecord.dmarc_aligned.is_(False),
+        )
+    )
+    if q:
+        like = f"%{q.strip().lower()}%"
+        query = query.filter(or_(
+            func.lower(AggregateRecord.source_asn_org).like(like),
+            func.lower(AggregateRecord.source_ip).like(like),
+        ))
+    rows = query.group_by(AggregateRecord.source_ip).order_by(func.sum(AggregateRecord.count).desc()).all()
+
+    items = [
+        {"source_ip": r.source_ip, "source_asn_org": r.source_asn_org or "Desconocido", "count": r.count}
+        for r in rows
+    ]
+
+    total_items = len(items)
+    per_page = max(1, per_page)
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * per_page
+
+    return {
+        "items": items[start:start + per_page],
+        "total_items": total_items,
+        "page": page,
+        "total_pages": total_pages,
     }
 
 

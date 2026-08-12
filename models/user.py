@@ -4,10 +4,12 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from models import db
 from models.monitoring import utcnow
 
-# Límite de dominios activos para cualquier usuario sin una fila propia en UserPlan (todos los
-# usuarios existentes, hoy) — evita tener que crear/backfillear una fila por usuario para que el
-# límite ya funcione. Ver UserPlan más abajo.
-DEFAULT_MAX_DOMAINS = 3
+# Límite de dominios activos para cualquier usuario (no-admin) sin una fila propia en UserPlan —
+# evita tener que crear/backfillear una fila por usuario para que el límite ya funcione. Un cliente
+# nuevo arranca en 1; para darle más, el admin le edita el plan desde /admin/usuarios. Ver UserPlan
+# más abajo, y get_max_domains() en services/monitoring_service.py para la excepción de admins
+# (sin límite, ver ese mismo comentario).
+DEFAULT_MAX_DOMAINS = 1
 
 
 class User(UserMixin, db.Model):

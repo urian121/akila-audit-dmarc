@@ -1,0 +1,76 @@
+<div id="affected-senders-table">
+  <form
+    id="affected-senders-filters-form"
+    hx-get="{{ url_for('trends_affected_senders', access_token=monitored.access_token) }}"
+    hx-target="#affected-senders-table"
+    hx-swap="outerHTML"
+    hx-trigger="input delay:300ms"
+  >
+    <input type="hidden" name="rango" value="{{ rango }}">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-[11px] text-zinc-500 shrink-0">{{ affected_table['total_items'] }} emisor{{ '' if affected_table['total_items'] == 1 else 'es' }}</span>
+      <input
+        type="text"
+        name="q"
+        value="{{ affected_q }}"
+        placeholder="Buscar IP u organización…"
+        class="flex-1 min-w-[160px] ml-auto bg-white border border-zinc-200 rounded-md px-3 py-1.5 text-[11px] text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-[#2d2147]/60 transition-colors"
+      >
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[560px] text-[12px] text-left">
+        <thead>
+          <tr class="text-zinc-500 uppercase text-[10px] tracking-wide">
+            <th class="px-3 py-2 whitespace-nowrap">IP de origen</th>
+            <th class="px-3 py-2 whitespace-nowrap">Servicio</th>
+            <th class="px-3 py-2 whitespace-nowrap">Mensajes</th>
+            <th class="px-3 py-2 whitespace-nowrap">SPF</th>
+            <th class="px-3 py-2 whitespace-nowrap">DKIM</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in affected_table['items'] %}
+            <tr class="border-t border-zinc-100">
+              <td class="px-3 py-2 text-zinc-700 whitespace-nowrap">{{ s.source_ip }}</td>
+              <td class="px-3 py-2 whitespace-nowrap"><span class="text-[10px] bg-zinc-100 text-zinc-600 rounded px-1.5 py-0.5">{{ s.source_asn_org }}</span></td>
+              <td class="px-3 py-2 text-zinc-700 whitespace-nowrap">{{ s.count }}</td>
+              <td class="px-3 py-2 whitespace-nowrap"><span class="text-[10px] text-rose-700 bg-rose-50 rounded px-1.5 py-0.5">Fallido</span></td>
+              <td class="px-3 py-2 whitespace-nowrap"><span class="text-[10px] text-rose-700 bg-rose-50 rounded px-1.5 py-0.5">Fallido</span></td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="px-3 py-4 text-center text-zinc-400">Ningún emisor coincide con este filtro.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+
+  {% if affected_table['total_pages'] > 1 %}
+    <div class="flex items-center justify-between mt-3">
+      <button
+        type="button"
+        hx-get="{{ url_for('trends_affected_senders', access_token=monitored.access_token) }}"
+        hx-include="#affected-senders-filters-form"
+        hx-vals='{"page": {{ affected_table['page'] - 1 }}}'
+        hx-target="#affected-senders-table"
+        hx-swap="outerHTML"
+        {{ 'disabled' if affected_table['page'] <= 1 }}
+        class="px-3 py-1.5 rounded-md text-xs bg-zinc-50 {{ 'text-zinc-300 pointer-events-none' if affected_table['page'] <= 1 else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+      >← Anterior</button>
+      <span class="text-[11px] text-zinc-400">página {{ affected_table['page'] }} de {{ affected_table['total_pages'] }}</span>
+      <button
+        type="button"
+        hx-get="{{ url_for('trends_affected_senders', access_token=monitored.access_token) }}"
+        hx-include="#affected-senders-filters-form"
+        hx-vals='{"page": {{ affected_table['page'] + 1 }}}'
+        hx-target="#affected-senders-table"
+        hx-swap="outerHTML"
+        {{ 'disabled' if affected_table['page'] >= affected_table['total_pages'] }}
+        class="px-3 py-1.5 rounded-md text-xs bg-zinc-50 {{ 'text-zinc-300 pointer-events-none' if affected_table['page'] >= affected_table['total_pages'] else 'text-zinc-600 hover:text-[#2d2147]' }} transition-colors"
+      >Siguiente →</button>
+    </div>
+  {% endif %}
+</div>

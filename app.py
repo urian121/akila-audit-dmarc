@@ -16,7 +16,7 @@ from services.domain_health_analysis import generate_health_analysis
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
 from models.user import DEFAULT_MAX_DOMAINS
-from services.monitoring_service import get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
+from services.monitoring_service import get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_affected_senders, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
 from services.forensic_reports_service import ingest_forensic_report
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
@@ -621,6 +621,7 @@ def trends_domain(access_token):
     report_breakdown = get_report_breakdown(monitored, TRENDS_RANGE_DAYS[rango])
     impact = get_impact_analysis(monitored, TRENDS_RANGE_DAYS[rango])
     impact["current_policy_label"] = DMARC_POLICY_LABELS.get(impact["current_policy"], (impact["current_policy"] or "Desconocida", None))[0]
+    affected_table = list_affected_senders(monitored, TRENDS_RANGE_DAYS[rango])
     return render_template(
         "monitoring/trends.html",
         domains=list_domains(current_user.id),
@@ -630,6 +631,28 @@ def trends_domain(access_token):
         impact=impact,
         policy_label=policy_label,
         report_breakdown=report_breakdown,
+        affected_table=affected_table,
+        affected_q="",
+    )
+
+
+@app.route("/tendencias/<access_token>/afectados", methods=["GET"])
+@login_required
+def trends_affected_senders(access_token):
+    """Fragmento htmx: tabla de emisores afectados del análisis de impacto, filtrada/paginada —
+    separada de trends_domain para que buscar/paginar no recalcule toda la página de Tendencias."""
+    monitored = get_domain_by_token(access_token)
+    if not monitored or monitored.user_id != current_user.id:
+        abort(404)
+    rango = request.args.get("rango", "30d")
+    if rango not in TRENDS_RANGE_DAYS:
+        rango = "30d"
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    affected_table = list_affected_senders(monitored, TRENDS_RANGE_DAYS[rango], q=q, page=page)
+    return render_template(
+        "partials/affected_senders_table.html",
+        monitored=monitored, affected_table=affected_table, rango=rango, affected_q=q,
     )
 
 
@@ -668,7 +691,8 @@ def trends_ai_analysis(access_token):
     report_breakdown = get_report_breakdown(monitored, days)
     analysis = None
     if trend_data["has_data"]:
-        analysis = generate_health_analysis(monitored, trend_data, impact, report_breakdown)
+        top_affected_senders = list_affected_senders(monitored, days, per_page=5)["items"]
+        analysis = generate_health_analysis(monitored, trend_data, impact, report_breakdown, top_affected_senders)
     return render_template("partials/ai_health_analysis.html", analysis=analysis, monitored=monitored)
 
 

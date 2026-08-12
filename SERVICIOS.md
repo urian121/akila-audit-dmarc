@@ -51,10 +51,11 @@ colega) donde se puede:
   que el resto.
 - Descargar un PDF con el resumen del panel.
 
-Cada cuenta tiene un límite de cuántos dominios puede tener monitoreando **a la vez** (por
-defecto, 3) — funciona como un plan: si necesitás monitorear más, hay que pausar alguno para
-liberar lugar, o pedir que te suban el límite. Pausar un dominio no borra nada de su historial,
-así que reactivarlo más adelante no pierde información.
+Cada cuenta cliente tiene un límite de cuántos dominios puede tener monitoreando **a la vez** (por
+defecto, 1) — funciona como un plan: si necesitás monitorear más, un administrador te sube el
+límite desde el panel de usuarios. Pausar un dominio no borra nada de su historial, así que
+reactivarlo más adelante no pierde información, y libera lugar para registrar otro mientras tanto.
+Las cuentas administradoras no tienen este límite.
 
 ## 3. Alertas automáticas
 
