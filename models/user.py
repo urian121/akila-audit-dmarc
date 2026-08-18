@@ -31,6 +31,17 @@ class User(UserMixin, db.Model):
     # Nulo = todavía nunca inició sesión (ej. una cuenta recién creada). Se actualiza en cada login
     # exitoso (ver auth_login() en app.py) — no en cada request, solo al loguearse.
     last_login_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Autenticación de la API JSON (services/auth_service.py:generate_api_key()/get_user_by_api_key()):
+    # SHA-256 de la key real, nunca la key en texto plano — a diferencia de password_hash, esto NO
+    # usa generate_password_hash/check_password_hash (ese hash lleva sal aleatoria distinta cada vez,
+    # así que no se puede buscar "¿quién tiene este hash?" directo en la base; SHA-256 sin sal sí,
+    # porque la key ya es un token de alta entropía, no necesita protección contra diccionario).
+    api_key_hash = db.Column(db.String(64), unique=True, nullable=True, index=True)
+    # Desactivable sin perder la key (reversible) — solo un admin la desactiva/reactiva, ver
+    # services/auth_service.py:set_api_key_active(). Regenerarla (generate_api_key) sí invalida la
+    # anterior para siempre, porque solo se guarda un hash por usuario.
+    api_key_active = db.Column(db.Boolean, nullable=False, default=True)
+    api_key_created_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     domains = db.relationship("MonitoredDomain", backref="owner", lazy="dynamic")
     plan = db.relationship("UserPlan", backref="user", uselist=False, cascade="all, delete-orphan")

@@ -24,18 +24,32 @@ Nada de esto se puede adivinar bien, hay que fijarlo primero:
 
 ---
 
-## Fase 0 — Base: autenticación de la API
+## Fase 0 — Base: autenticación de la API ✅ HECHA
 
-Hoy el login es por cookie de sesión (Flask-Login) — no sirve para un cliente externo. Se
-necesita un mecanismo nuevo, separado del login de la web:
+Se descartó JWT/login (no hacía falta para el caso de uso: consumo desde un servicio externo,
+no un flujo de login interactivo) — quedó API key estática por usuario, sin login ni expiración:
 
-- [ ] Tabla/columna nueva: `ApiKey` (o `User.api_key`) — token generado, guardado con hash
-      (igual criterio que las contraseñas: nunca en texto plano).
-- [ ] Pantalla en `/cuenta` para generar/regenerar el key propio.
-- [ ] Decorador `@require_api_key` (hermano de `@login_required`): lee
-      `Authorization: Bearer <token>`, resuelve el usuario, 401 si no matchea.
-- [ ] **No reusar** el `access_token` de `MonitoredDomain` para esto — es un mecanismo distinto
-      (link mágico público), no autenticación de usuario.
+- [x] 3 columnas nuevas en `User` (`ALTER TABLE` manual, ver `AGENTS.md`): `api_key_hash`
+      (SHA-256, nunca la key en texto plano — no el mismo hash que las contraseñas, ver por qué
+      en `AGENTS.md`), `api_key_active`, `api_key_created_at`. Sin tabla aparte — una key por
+      usuario alcanza hoy.
+- [x] **Generar y desactivar son solo de admin, no self-service** (corregido sobre la primera
+      versión, que sí dejaba generar desde `/cuenta`) — `POST /admin/usuarios/<id>/api-key/generar`
+      y `POST /admin/usuarios/<id>/api-key/toggle`, ambas en `admin/edit_plan.html`. El cliente no
+      ve ninguna opción de API key en su propia cuenta; el admin genera en nombre del usuario
+      elegido y ve la key en texto plano **una sola vez**, ahí mismo — es quien se la tiene que
+      hacer llegar por fuera de la app.
+- [x] Decorador `@require_api_key` (`app.py`): lee `Authorization: Bearer <token>`, resuelve el
+      usuario en `g.api_user`, 401 si falta o no matchea/está desactivada.
+- [x] `GET /api/v1/me` — primer endpoint real, prueba el mecanismo de punta a punta.
+- [x] `access_token` de `MonitoredDomain` no se tocó — sigue siendo su propio mecanismo (link
+      mágico público), no se mezcló con esto.
+
+Probado: `/cuenta` ya no muestra la opción (ni existe la ruta vieja de self-service, 404); admin
+genera la key de otro usuario → 200 con la key real; sin header o key inválida → 401; admin
+desactiva → esa misma key pasa a 401; admin reactiva → vuelve a 200; regenerar invalida la key
+vieja al instante; un usuario no-admin no puede generar ni tocar el toggle de nadie, ni el suyo
+propio (404).
 
 ---
 
@@ -61,6 +75,7 @@ Uno por cada cosa que hoy es una página HTML. Todos bajo `/api/v1/`, todos `GET
 
 | Endpoint | Reemplaza / usa | Nota |
 |---|---|---|
+| `GET /api/v1/me` | — | ✅ Ya existe — prueba del mecanismo de auth, info básica de la cuenta dueña de la key |
 | `GET /api/v1/check/<domain>` | ya existe (`/api/check/<domain>`) | Sin auth, público — se mantiene igual, solo se versiona la URL |
 | `GET /api/v1/dominios` | `list_domains()` | Dominios monitoreados del usuario |
 | `GET /api/v1/dominios/<token>` | `get_dashboard_data()` | Dashboard: alertas + reportes agregados + forenses |
@@ -103,8 +118,8 @@ Admin (opcional, solo si la API también es para administración):
 
 ## Orden recomendado de ataque
 
-1. Fase 0 (auth) — sin esto no se puede probar nada gateado.
-2. Fase 1 (serialización) — en paralelo, empezar por los modelos más usados
+1. ~~Fase 0 (auth)~~ — hecha.
+2. Fase 1 (serialización) — empezar por los modelos más usados
    (`MonitoredDomain`, `AggregateReport`/`AggregateRecord`).
 3. Fase 2, de a poco, dominio por dominio de la tabla — no hace falta todo de una:
    sugerido, arrancar por `check`, `dominios`, `dominios/<token>` (lo más pedido / más simple),

@@ -1,3 +1,6 @@
+import hashlib
+import secrets
+
 from sqlalchemy import func, or_
 
 from models import User, UserPlan, db
@@ -114,3 +117,45 @@ def set_user_active(user_id, is_active, current_user_id):
     user.is_active = is_active
     db.session.commit()
     return user, None
+
+
+def generate_api_key(user_id):
+    """Genera (o regenera) la API key de un usuario — self-service, desde /cuenta. Devuelve la key
+    en texto plano UNA sola vez (nunca se puede volver a mostrar, solo queda guardado su hash) o
+    None si el usuario no existe. Regenerar invalida la anterior de inmediato: solo se guarda un
+    hash por usuario, la vieja key deja de matchear en cuanto se pisa."""
+    user = User.query.get(user_id)
+    if not user:
+        return None
+    raw_key = secrets.token_urlsafe(32)
+    user.api_key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    user.api_key_active = True
+    user.api_key_created_at = utcnow()
+    db.session.commit()
+    return raw_key
+
+
+def set_api_key_active(user_id, is_active):
+    """Activa o desactiva la API key de un usuario (no la borra — reversible). Solo la puede tocar
+    un admin, ver /admin/usuarios/<id>. Devuelve (user, error): error="no_key" si el usuario
+    todavía no generó ninguna."""
+    user = User.query.get(user_id)
+    if not user:
+        return None, None
+    if not user.api_key_hash:
+        return user, "no_key"
+    user.api_key_active = is_active
+    db.session.commit()
+    return user, None
+
+
+def get_user_by_api_key(raw_key):
+    """Resuelve qué usuario es dueño de esta API key — None si no existe, está desactivada, o la
+    cuenta entera está desactivada. Usado por @require_api_key en app.py, no por el login web."""
+    if not raw_key:
+        return None
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    user = User.query.filter_by(api_key_hash=key_hash).first()
+    if not user or not user.api_key_active or not user.is_active:
+        return None
+    return user

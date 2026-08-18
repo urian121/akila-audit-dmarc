@@ -4,12 +4,12 @@ from datetime import datetime, timezone
 from functools import wraps
 
 from dotenv import load_dotenv
-from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 
 from models import DomainSnapshot, Plan, User, db
 from services.ai_summary import generate_summary
-from services.auth_service import authenticate, list_users, register_user, set_user_active, update_email, update_password
+from services.auth_service import authenticate, generate_api_key, get_user_by_api_key, list_users, register_user, set_api_key_active, set_user_active, update_email, update_password
 from services.card_builder import DMARC_POLICY_LABELS, build_cards, build_risks, build_summary
 from services.checkdmarc_service import build_dns_screen_data, run_check
 from services.domain_health_analysis import generate_health_analysis
@@ -74,6 +74,25 @@ def admin_required(view):
             return login_manager.unauthorized()
         if not current_user.is_admin:
             abort(404)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def require_api_key(view):
+    """Autenticación de la API JSON (`/api/v1/...`) — header `Authorization: Bearer <api_key>`,
+    sin sesión de cookie: pensada para un consumidor externo (script, otro backend, un frontend
+    propio con o sin framework de JS), no para el navegador. Resuelve el usuario dueño de la key
+    en `g.api_user` — a propósito no reusa `current_user` de Flask-Login, esto no inicia sesión."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Falta el header Authorization: Bearer <api_key>."}), 401
+        raw_key = auth_header[len("Bearer "):].strip()
+        user = get_user_by_api_key(raw_key)
+        if not user:
+            return jsonify({"error": "API key inválida, desactivada, o cuenta desactivada."}), 401
+        g.api_user = user
         return view(*args, **kwargs)
     return wrapped
 
@@ -192,6 +211,20 @@ def check(domain):
     custom_selector = request.args.get("selector")
     result = run_check(domain, custom_selector)
     return jsonify(result)
+
+
+@app.route("/api/v1/me", methods=["GET"])
+@require_api_key
+def api_me():
+    """Primer endpoint de la API por API key (ver API_PLAN.md) — prueba el mecanismo de
+    autenticación end to end: info básica de la cuenta dueña de la key mandada en el header."""
+    user = g.api_user
+    return jsonify({
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "plan_max_domains": get_max_domains(user.id),
+    })
 
 
 @app.route("/reporte-pdf", methods=["GET"])
@@ -439,6 +472,52 @@ def admin_assign_plan(user_id):
         "admin/edit_plan.html", target_user=target_user, form_data=form_data,
         default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans,
         success=f"Plan actualizado a {form_data['plan_label']}.",
+    )
+
+
+@app.route("/admin/usuarios/<int:user_id>/api-key/generar", methods=["POST"])
+@admin_required
+def admin_generate_api_key(user_id):
+    """Genera (o regenera) la API key de un usuario — solo un admin puede hacerlo, no es
+    self-service (a pedido explícito). Se muestra en texto plano una sola vez, en esta misma
+    respuesta — el admin es quien se la tiene que hacer llegar al usuario por fuera de la app.
+    Regenerar invalida cualquier key anterior de inmediato."""
+    target_user = User.query.get(user_id)
+    if target_user is None:
+        abort(404)
+    plans = Plan.query.order_by(Plan.id).all()
+
+    raw_key = generate_api_key(user_id)
+    form_data = get_user_plan_form_data(user_id)
+    return render_template(
+        "admin/edit_plan.html", target_user=target_user, form_data=form_data,
+        default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans, new_api_key=raw_key,
+    )
+
+
+@app.route("/admin/usuarios/<int:user_id>/api-key/toggle", methods=["POST"])
+@admin_required
+def admin_toggle_api_key(user_id):
+    """Activa o desactiva la API key de un usuario — solo un admin puede hacerlo (a propósito, no
+    es self-service todavía). No la borra, es reversible."""
+    target_user = User.query.get(user_id)
+    if target_user is None:
+        abort(404)
+    plans = Plan.query.order_by(Plan.id).all()
+
+    activar = request.form.get("activar") == "1"
+    _user, error = set_api_key_active(user_id, activar)
+    form_data = get_user_plan_form_data(user_id)
+    if error == "no_key":
+        return render_template(
+            "admin/edit_plan.html", target_user=target_user, form_data=form_data,
+            default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans,
+            error="Este usuario todavía no generó ninguna API key.",
+        ), 400
+    return render_template(
+        "admin/edit_plan.html", target_user=target_user, form_data=form_data,
+        default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans,
+        success=f"API key {'activada' if activar else 'desactivada'} correctamente.",
     )
 
 

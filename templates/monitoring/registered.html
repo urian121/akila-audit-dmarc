@@ -1,23 +1,7 @@
 {% extends "layout.html" %}
+{% from "partials/macros.html" import copy_icon_button %}
 {% block title %}Akila - Monitoreo continuo de DMARC{% endblock %}
 {% block content %}
-{% macro copy_icon_button(target_id) %}
-<button
-  type="button"
-  title="Copiar"
-  data-copy-target="{{ target_id }}"
-  hx-on:click="navigator.clipboard.writeText(document.getElementById(this.dataset.copyTarget).textContent.trim()); this.dataset.copied = '1'; setTimeout(() => { this.dataset.copied = ''; }, 1500)"
-  class="group inline-flex items-center justify-center w-7 h-7 rounded-md bg-white text-zinc-400 hover:text-[#2d2147] transition-colors shrink-0"
->
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 group-data-[copied=1]:hidden">
-    <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-  </svg>
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 hidden group-data-[copied=1]:block text-emerald-600">
-    <polyline points="20 6 9 17 4 12"></polyline>
-  </svg>
-</button>
-{% endmacro %}
 
 {% macro copy_text_button(target_id) %}
 <button
@@ -39,7 +23,7 @@
 </button>
 {% endmacro %}
 
-    <div class="max-w-4xl mx-auto px-6 py-16">
+    <div class="max-w-5xl mx-auto px-6 py-16">
     <div class="flex items-center justify-between gap-3 mb-1">
       <div class="flex items-center gap-3">
         <a

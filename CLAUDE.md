@@ -67,7 +67,7 @@ Las páginas de análisis (`/tendencias`, dashboard por dominio, "Informes DMARC
 **Reglas de layout que no hay que reabrir**:
 
 - `html { scrollbar-gutter: stable; }` en `home.css` — reserva siempre el espacio de la barra de scroll, para que los contenedores centrados (`mx-auto`) no se corran unos píxeles entre una página/estado con scroll y uno sin scroll. No quitar esta regla.
-- Ancho de contenedor por página: solo dos tamaños, `max-w-4xl` (formularios/una columna) o `max-w-5xl` (tablas/gráficas anchas de verdad) — no un tercero. Ver el detalle y la lista de qué página usa cuál en `AGENTS.md`.
+- Ancho de contenedor por página: **un solo tamaño, `max-w-5xl` mx-auto px-6 py-16, para toda página que extiende `layout.html`** — no `max-w-4xl` ni ningún otro, ni siquiera para formularios de una columna. Se unificó explícitamente porque el esquema anterior de dos tamaños ya causó una vez que una página quedara mal documentada en los dos buckets a la vez. `auth/login.html`/`auth/register.html` son la única excepción (standalone, no llevan esta clase). Ver detalle en `AGENTS.md`.
 
 ## Toasts / alertas — vocabulario del usuario
 

@@ -158,6 +158,12 @@ un botón para asignar Gratis o Pago directo, o ajustando a mano el límite de d
 de vencimiento para una excepción puntual. Al vencer un plan sin renovarse, el usuario vuelve solo
 al límite por defecto — no hace falta que un admin lo edite a mano para "revertirlo".
 
+Cada cuenta puede tener una **clave de API** para consumir sus datos desde afuera de la
+aplicación (un script, otro sistema, un frontend propio) sin tener que iniciar sesión. No es
+autogestionable: solo un administrador la genera y la desactiva, eligiendo el usuario desde el
+panel — se muestra una sola vez al generarla, así que el admin tiene que copiarla y hacérsela
+llegar a esa persona en ese momento. Generar una nueva siempre invalida la anterior al instante.
+
 La lista de usuarios también muestra, de cada cuenta: cuándo se registró, cuándo fue su última
 sesión iniciada (o "Nunca" si todavía no entró), si está activa o no, y su plan — toda la
 trazabilidad en un solo lugar.
