@@ -5,6 +5,8 @@ from functools import wraps
 
 from dotenv import load_dotenv
 from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, url_for
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 
 from models import DomainSnapshot, Plan, User, db
@@ -16,10 +18,11 @@ from services.domain_health_analysis import generate_health_analysis
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
 from models.user import DEFAULT_MAX_DOMAINS
-from services.monitoring_service import assign_plan, get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_affected_senders, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
+from services.monitoring_service import assign_plan, count_active_domains, get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_affected_senders, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
 from services.forensic_reports_service import ingest_forensic_report
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
+from utils.serializers import serialize_alert, serialize_aggregate_record, serialize_aggregate_report, serialize_forensic_report, serialize_monitored_domain, serialize_paginated, serialize_user
 
 # Sólo tiene efecto en local: .env está en .gitignore, así que Railway (que
 # despliega desde el repo de GitHub) nunca ve este archivo. Las variables de
@@ -36,6 +39,20 @@ app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 login_manager = LoginManager()
 login_manager.login_view = "auth_login"
 login_manager.init_app(app)
+
+# Rate limit — sólo se aplica al endpoint que se decora explícitamente (default_limits=[]), hoy
+# únicamente /api/check/<domain> (Fase 3 de API_PLAN.md): es el único endpoint público sin API key
+# y hace consultas DNS reales por request. Storage en memoria (default) alcanza porque la app corre
+# en un solo proceso web (sin workers/réplicas separadas, ver AGENTS.md) — si algún día se agregan
+# más procesos, esto necesitaría un backend compartido (ej. Redis) para que el límite sea real entre todos.
+limiter = Limiter(get_remote_address, app=app, default_limits=[])
+
+
+@app.errorhandler(429)
+def handle_rate_limit(error):
+    """429 en JSON, no la página HTML de handle_not_found — hoy sólo lo dispara /api/check/<domain>,
+    un endpoint de API."""
+    return jsonify({"error": "Demasiadas consultas — probá de nuevo en un minuto."}), 429
 
 
 @login_manager.user_loader
@@ -97,20 +114,46 @@ def require_api_key(view):
     return wrapped
 
 
+def _domain_owned_by(monitored, user):
+    """Un dominio es "del" usuario si lo registró él, o si es admin (los admins ven cualquier
+    dominio, igual que ya pueden ver/editar cualquier cuenta desde /admin/usuarios). Único punto
+    con esta regla — la usan tanto las rutas web (sesión) como la API (API key)."""
+    return monitored is not None and (monitored.user_id == user.id or user.is_admin)
+
+
 def get_owned_domain_or_404(access_token):
     """Resuelve un dominio monitoreado por su access_token para las rutas web (sesión de
     Flask-Login) y exige que sea del usuario logueado — 404 si no existe o si es de otro
     usuario, mismo criterio que admin_required (no confirmar existencia a quien no es dueño).
-    Los admins pueden ver cualquier dominio, igual que ya pueden ver/editar cualquier cuenta
-    desde /admin/usuarios.
 
     El dashboard por token dejó de ser un "link mágico" público (compartible sin cuenta) — ahora
     hace falta sesión propia y ser el dueño (o admin) para entrar, a pedido explícito del usuario.
     Todas las rutas /monitoreo/<token>... y /tendencias/<token>... llaman esto antes que nada."""
     monitored = get_domain_by_token(access_token)
-    if monitored is None or (monitored.user_id != current_user.id and not current_user.is_admin):
+    if not _domain_owned_by(monitored, current_user):
         abort(404)
     return monitored
+
+
+def get_api_owned_domain(access_token):
+    """Igual que get_owned_domain_or_404 pero para la API por API key (g.api_user, no
+    current_user de Flask-Login) — devuelve None en vez de abortar, porque un abort(404) plano
+    renderiza la página 404 en HTML (ver handle_not_found), no sirve para un consumidor JSON. La
+    ruta que llama esto arma su propio jsonify({"error": ...}), 404."""
+    monitored = get_domain_by_token(access_token)
+    return monitored if _domain_owned_by(monitored, g.api_user) else None
+
+
+def require_api_admin(view):
+    """Como @require_api_key pero además exige is_admin — 404 (no 403), mismo criterio que
+    @admin_required en el resto de la app (no confirmar que la ruta existe a quien no es admin).
+    Envuelve a @require_api_key en vez de repetir la lectura del header Authorization."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not g.api_user.is_admin:
+            return jsonify({"error": "No se encontró esa ruta."}), 404
+        return view(*args, **kwargs)
+    return require_api_key(wrapped)
 
 
 @app.errorhandler(404)
@@ -222,8 +265,11 @@ def check_partial():
 
 
 @app.route("/api/check/<domain>", methods=["GET"])
+@limiter.limit("10/minute")
 def check(domain):
-    """API JSON pública (sin sesión, a propósito): ejecuta la auditoría del dominio indicado y la devuelve completa."""
+    """API JSON pública (sin sesión, a propósito): ejecuta la auditoría del dominio indicado y la
+    devuelve completa. Rate limit: 10/minuto por IP (Fase 3 de API_PLAN.md) — es el único endpoint
+    de la API sin API key, y hace consultas DNS reales por request."""
     custom_selector = request.args.get("selector")
     result = run_check(domain, custom_selector)
     return jsonify(result)
@@ -234,13 +280,262 @@ def check(domain):
 def api_me():
     """Primer endpoint de la API por API key (ver API_PLAN.md) — prueba el mecanismo de
     autenticación end to end: info básica de la cuenta dueña de la key mandada en el header."""
-    user = g.api_user
+    data = serialize_user(g.api_user)
+    data["plan_max_domains"] = get_max_domains(g.api_user.id)  # None = sin límite (admin)
+    data["domains_used"] = count_active_domains(g.api_user.id)
+    return jsonify(data)
+
+
+@app.route("/api/v1/dominios", methods=["GET"])
+@require_api_key
+def api_dominios():
+    """Lista los dominios monitoreados de la cuenta dueña de la API key (equivalente a /monitoreos/)."""
+    domains = list_domains(g.api_user.id)
+    return jsonify({"dominios": [serialize_monitored_domain(d) for d in domains]})
+
+
+@app.route("/api/v1/dominios/<access_token>", methods=["GET"])
+@require_api_key
+def api_dominio_dashboard(access_token):
+    """Dashboard de un dominio puntual (equivalente a /monitoreo/<token>): dominio + alertas +
+    informes agregados + reportes forenses recientes."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    data = get_dashboard_data(access_token)
     return jsonify({
-        "id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "plan_max_domains": get_max_domains(user.id),
+        "dominio": serialize_monitored_domain(data["monitored"]),
+        "alertas": [serialize_alert(a) for a in data["alerts"]],
+        "informes": [serialize_aggregate_report(r) for r in data["reports"]],
+        "forenses": [serialize_forensic_report(f) for f in data["forensic_reports"]],
     })
+
+
+@app.route("/api/v1/dominios/<access_token>/remitentes", methods=["GET"])
+@require_api_key
+def api_dominio_remitentes(access_token):
+    """Tabla paginada de remitentes reales (equivalente a /monitoreo/<token>/remitentes).
+    Query params: rango (7d/30d/90d/todos), estado (todos/con_fallas/sin_fallas), q, page."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    _, days = _parse_rango()
+    estado = request.args.get("estado", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    senders = list_domain_senders(monitored, days=days, estado=estado, q=q, page=page)
+    return jsonify(serialize_paginated(senders, date_keys=("first_seen", "last_seen")))
+
+
+@app.route("/api/v1/dominios/<access_token>/alertas", methods=["GET"])
+@require_api_key
+def api_dominio_alertas(access_token):
+    """Tabla paginada de alertas (equivalente a /monitoreo/<token>/alertas).
+    Query params: rango (7d/30d/90d/todos), tipo (todos/remitente_desconocido/cambio_configuracion), q, page."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    _, days = _parse_rango()
+    tipo = request.args.get("tipo", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    alerts = list_domain_alerts(monitored, days=days, tipo=tipo, q=q, page=page)
+    return jsonify(serialize_paginated(alerts, date_keys=("last_seen",)))
+
+
+@app.route("/api/v1/dominios/<access_token>/impacto/afectados", methods=["GET"])
+@require_api_key
+def api_dominio_afectados(access_token):
+    """Tabla paginada de emisores que se verían afectados por endurecer la política (equivalente
+    a /tendencias/<token>/afectados). Query params: rango (7d/30d/90d, sin "todos"), q, page."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    _, days = _parse_rango(allow_todos=False)
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    affected = list_affected_senders(monitored, days=days, q=q, page=page)
+    return jsonify(serialize_paginated(affected))
+
+
+@app.route("/api/v1/dominios/<access_token>/subdominios", methods=["GET"])
+@require_api_key
+def api_dominio_subdominios(access_token):
+    """Desglose por subdominio/header_from (equivalente al bloque de subdominios del dashboard).
+    Ya es JSON-safe tal cual (lista de dicts con solo str/int/float) — no necesita serializer.
+    Query params: rango (7d/30d/90d, default 30d)."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    _, days = _parse_rango(allow_todos=False)
+    return jsonify({"subdominios": get_subdomain_breakdown(monitored, days)})
+
+
+@app.route("/api/v1/dominios/<access_token>/tendencias", methods=["GET"])
+@require_api_key
+def api_dominio_tendencias(access_token):
+    """Volumen pass/fail por día + tasa de cumplimiento (equivalente a /tendencias/<token>). Ya es
+    JSON-safe tal cual — no necesita serializer. Query params: rango (7d/30d/90d, default 30d)."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    _, days = _parse_rango(allow_todos=False)
+    return jsonify(get_trends_data(monitored, days))
+
+
+@app.route("/api/v1/dominios/<access_token>/impacto", methods=["GET"])
+@require_api_key
+def api_dominio_impacto(access_token):
+    """Estado actual + análisis de impacto de endurecer la política DMARC (equivalente al bloque
+    "Análisis de impacto" de Tendencias, sin la tabla de afectados — ver .../impacto/afectados
+    aparte). Ya es JSON-safe tal cual. Query params: rango (7d/30d/90d, default 30d)."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    _, days = _parse_rango(allow_todos=False)
+    return jsonify(get_impact_analysis(monitored, days))
+
+
+@app.route("/api/v1/dominios/<access_token>/analisis-ia", methods=["GET"])
+@require_api_key
+def api_dominio_analisis_ia(access_token):
+    """Análisis de salud DMARC generado por IA (equivalente a /tendencias/<token>/analisis-ia).
+    `analisis` es `None` si no hay tráfico en el período o si la IA no está configurada/falla —
+    se degrada sola, ver domain_health_analysis.py. Query params: rango (7d/30d/90d, default 30d)."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    _, days = _parse_rango(allow_todos=False)
+    trend_data = get_trends_data(monitored, days)
+    analysis = None
+    if trend_data["has_data"]:
+        impact = get_impact_analysis(monitored, days)
+        report_breakdown = get_report_breakdown(monitored, days)
+        top_affected_senders = list_affected_senders(monitored, days, per_page=5)["items"]
+        analysis = generate_health_analysis(monitored, trend_data, impact, report_breakdown, top_affected_senders)
+    return jsonify({"analisis": analysis})
+
+
+@app.route("/api/v1/cumplimiento", methods=["GET"])
+@require_api_key
+def api_cumplimiento():
+    """Cumplimiento de TODOS los dominios monitoreados de la cuenta dueña de la key, de un vistazo
+    (equivalente a /cumplimiento). No incluye el chequeo de DNS en vivo — eso es sólo para la UI
+    (ver get_compliance_protocol_status en AGENTS.md), acá sólo lo ya calculado a partir de tráfico
+    real. Query params: rango (7d/30d/90d, default 30d)."""
+    _, days = _parse_rango(allow_todos=False)
+    overview = get_compliance_overview(g.api_user.id, days)
+    return jsonify({"dominios": [
+        {
+            "dominio": serialize_monitored_domain(item["monitored"]),
+            "current_policy": item["current_policy"],
+            "policy_label": item["policy_label"],
+            "pass_rate": item["pass_rate"],
+            "total": item["total"],
+            "status": item["status"],
+        }
+        for item in overview
+    ]})
+
+
+def _serialize_dmarc_report_item(item):
+    """item_serializer para serialize_paginated() — cada fila de list_dmarc_reports() trae objetos
+    ORM (report/monitored) mezclados con campos ya calculados, a diferencia de list_domain_senders
+    y compañía (que arman dicts planos). Un solo lugar con este mapeo, lo usan lista y detalle."""
+    return {
+        "informe": serialize_aggregate_report(item["report"]),
+        "dominio": serialize_monitored_domain(item["monitored"]),
+        "domain_shown": item["domain_shown"],
+        "total": item["total"],
+        "compliance_rate": item["compliance_rate"],
+    }
+
+
+@app.route("/api/v1/informes-dmarc", methods=["GET"])
+@require_api_key
+def api_informes_dmarc():
+    """Lista paginada de todos los informes DMARC agregados de la cuenta, de todos sus dominios
+    juntos (equivalente a /informes-dmarc). Query params: rango (7d/30d/90d/todos, default 30d),
+    estado (todos/aprobado/con_fallas), q, page."""
+    _, days = _parse_rango()
+    estado = request.args.get("estado", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    data = list_dmarc_reports(g.api_user.id, days=days, estado=estado, q=q, page=page)
+    return jsonify(serialize_paginated(data, item_serializer=_serialize_dmarc_report_item))
+
+
+@app.route("/api/v1/informes-dmarc/<int:report_id>", methods=["GET"])
+@require_api_key
+def api_informe_dmarc_detail(report_id):
+    """Detalle de un informe DMARC agregado puntual: metadata + desglose SPF/DKIM + lista de
+    registros (equivalente a /informes-dmarc/<id>). Igual que su equivalente web, sin bypass de
+    admin — get_dmarc_report_detail() ya valida que el informe sea de un dominio de esta cuenta."""
+    detail = get_dmarc_report_detail(report_id, g.api_user.id)
+    if detail is None:
+        return jsonify({"error": "No se encontró ese informe."}), 404
+    return jsonify({
+        "informe": serialize_aggregate_report(detail["report"]),
+        "dominio": serialize_monitored_domain(detail["monitored"]),
+        "domain_shown": detail["domain_shown"],
+        "registros": [serialize_aggregate_record(r) for r in detail["records"]],
+        "total": detail["total"],
+        "compliance_rate": detail["compliance_rate"],
+        "only_spf": detail["only_spf"],
+        "only_dkim": detail["only_dkim"],
+        "both_failed": detail["both_failed"],
+    })
+
+
+@app.route("/api/v1/tls-rpt", methods=["GET"])
+@require_api_key
+def api_tls_rpt():
+    """Estado de verificación DNS de TLS-RPT de los dominios de la cuenta (equivalente a
+    /reportes-tls-rpt). Query params: estado (todos/verificado/no_verificado)."""
+    domains = list_domains(g.api_user.id)
+    estado = request.args.get("estado", "todos")
+    if estado == "verificado":
+        domains = [d for d in domains if d.tls_rpt_verified]
+    elif estado == "no_verificado":
+        domains = [d for d in domains if not d.tls_rpt_verified]
+    return jsonify({"dominios": [serialize_monitored_domain(d) for d in domains]})
+
+
+@app.route("/api/v1/admin/usuarios", methods=["GET"])
+@require_api_admin
+def api_admin_usuarios():
+    """Lista de todas las cuentas de la aplicación (equivalente a /admin/usuarios) — solo para una
+    API key de cuenta admin. Query params: rol (todos/admin/cliente), estado (todos/activos/inactivos), q, page."""
+    rol = request.args.get("rol", "todos")
+    estado = request.args.get("estado", "todos")
+    q = request.args.get("q", "").strip()
+    page = request.args.get("page", 1, type=int) or 1
+    data = list_users(rol=rol, estado=estado, q=q, page=page)
+    return jsonify(serialize_paginated(data, item_serializer=lambda item: {
+        "usuario": serialize_user(item["user"]),
+        "domain_count": item["domain_count"],
+        "plan_max_domains": item["plan_max_domains"],
+        "plan_expires_label": item["plan_expires_label"],
+        "plan_is_expired": item["plan_is_expired"],
+        "plan_label": item["plan_label"],
+    }))
+
+
+@app.route("/api/v1/admin/usuarios/<int:user_id>", methods=["GET"])
+@require_api_admin
+def api_admin_usuario_detail(user_id):
+    """Detalle de una cuenta puntual: perfil + plan (equivalente a /admin/usuarios/<id>/plan, sólo
+    lectura acá) — solo para una API key de cuenta admin."""
+    target_user = User.query.get(user_id)
+    if target_user is None:
+        return jsonify({"error": "No se encontró ese usuario."}), 404
+    data = serialize_user(target_user)
+    data["is_active"] = target_user.is_active
+    data["has_api_key"] = bool(target_user.api_key_hash)
+    data["api_key_active"] = target_user.api_key_active
+    data["domains_used"] = count_active_domains(target_user.id)
+    data["plan_form"] = get_user_plan_form_data(target_user.id)
+    return jsonify(data)
 
 
 @app.route("/reporte-pdf", methods=["GET"])
@@ -662,6 +957,19 @@ def compliance_protocol_status():
 
 
 TRENDS_RANGE_DAYS = {"7d": 7, "30d": 30, "90d": 90}
+
+
+def _parse_rango(allow_todos=True):
+    """Lee ?rango= de la query string y lo traduce a días — mismo patrón que ya repiten las rutas
+    web de remitentes/alertas/tendencias, extraído acá para los endpoints de la API nuevos.
+    `allow_todos=False` para los que no soportan "todos" (ej. afectados, igual que su equivalente
+    web trends_affected_senders)."""
+    rango = request.args.get("rango", "30d")
+    if allow_todos and rango == "todos":
+        return rango, None
+    if rango not in TRENDS_RANGE_DAYS:
+        rango = "30d"
+    return rango, TRENDS_RANGE_DAYS[rango]
 
 
 @app.route("/reportes-tls-rpt", methods=["GET"])

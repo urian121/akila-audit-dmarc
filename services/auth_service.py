@@ -120,10 +120,11 @@ def set_user_active(user_id, is_active, current_user_id):
 
 
 def generate_api_key(user_id):
-    """Genera (o regenera) la API key de un usuario — self-service, desde /cuenta. Devuelve la key
-    en texto plano UNA sola vez (nunca se puede volver a mostrar, solo queda guardado su hash) o
-    None si el usuario no existe. Regenerar invalida la anterior de inmediato: solo se guarda un
-    hash por usuario, la vieja key deja de matchear en cuanto se pisa."""
+    """Genera (o regenera) la API key de un usuario — solo un admin la genera, desde
+    /admin/usuarios/<id>/plan (no self-service, ver AGENTS.md). Devuelve la key en texto plano UNA
+    sola vez (nunca se puede volver a mostrar, solo queda guardado su hash) o None si el usuario
+    no existe. Regenerar invalida la anterior de inmediato: solo se guarda un hash por usuario, la
+    vieja key deja de matchear en cuanto se pisa."""
     user = User.query.get(user_id)
     if not user:
         return None

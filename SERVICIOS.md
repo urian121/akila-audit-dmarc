@@ -162,6 +162,8 @@ aplicación (un script, otro sistema, un frontend propio) sin tener que iniciar 
 autogestionable: solo un administrador la genera y la desactiva, eligiendo el usuario desde el
 panel — se muestra una sola vez al generarla, así que el admin tiene que copiarla y hacérsela
 llegar a esa persona en ese momento. Generar una nueva siempre invalida la anterior al instante.
+Con esa clave, prácticamente todo lo de arriba (dominios, remitentes, alertas, tendencias,
+cumplimiento, informes, cuenta) está disponible como JSON — ver `API.md` para el detalle técnico.
 
 La lista de usuarios también muestra, de cada cuenta: cuándo se registró, cuándo fue su última
 sesión iniciada (o "Nunca" si todavía no entró), si está activa o no, y su plan — toda la

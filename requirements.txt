@@ -11,3 +11,4 @@ Flask-Login==0.6.3
 parsedmarc==10.2.0
 reportlab==5.0.0
 APScheduler==3.10.4
+Flask-Limiter==4.1.1

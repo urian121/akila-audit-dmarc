@@ -10,6 +10,8 @@ Este proyecto está en una etapa inicial. El objetivo completo, la arquitectura 
 
 **2. Monitoreo continuo** (`/monitoreo/...`): permite registrar un dominio, genera las instrucciones exactas de DNS para DMARC/TLS-RPT/SPF (con detección de proveedor por MX y generador de política interactivo), verifica en vivo si ya se publicó el cambio, y deja un dashboard con historial de reportes y alertas — persistido en Postgres.
 
+**3. API por API key** (`/api/v1/...`): toda la información de arriba (dominios, remitentes, alertas, tendencias, cumplimiento, informes, cuenta) también disponible como JSON para un consumidor externo — ver [API.md](API.md) para la referencia completa (autenticación, endpoints, ejemplos).
+
 Demo
 
 <p align="center">

@@ -13,7 +13,7 @@ Para las reglas detalladas de negocio, frontend y arquitectura (mucho más exhau
 
 ## Stack
 
-Python 3.11+, Flask, Flask-SQLAlchemy (Postgres), Flask-Login, APScheduler. Frontend: Jinja2 + Tailwind CSS (CDN) + [htmx](https://htmx.org/) — sin JS build, sin framework de frontend. `checkdmarc` + `dkimpy` para las validaciones; `parsedmarc` para ingerir reportes DMARC agregados; `reportlab` para PDFs; `openai` para el resumen/análisis con IA (opcional).
+Python 3.11+, Flask, Flask-SQLAlchemy (Postgres), Flask-Login, APScheduler, Flask-Limiter (rate limit de la API pública). Frontend: Jinja2 + Tailwind CSS (CDN) + [htmx](https://htmx.org/) — sin JS build, sin framework de frontend. `checkdmarc` + `dkimpy` para las validaciones; `parsedmarc` para ingerir reportes DMARC agregados; `reportlab` para PDFs; `openai` para el resumen/análisis con IA (opcional).
 
 ## Comandos
 
