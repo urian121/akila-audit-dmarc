@@ -4,11 +4,12 @@ from datetime import timedelta
 
 from sqlalchemy import case, func, or_
 
-from models import Alert, AggregateRecord, AggregateReport, DomainSnapshot, ForensicReport, MonitoredDomain, User, UserPlan, db
+from models import Alert, AggregateRecord, AggregateReport, DomainSnapshot, ForensicReport, MonitoredDomain, Plan, User, UserPlan, db
 from models.user import DEFAULT_MAX_DOMAINS
 from models.monitoring import utcnow
 from services.card_builder import DMARC_POLICY_LABELS, build_summary
 from services.checkdmarc_service import dns_has_mailbox_in_rua, dns_has_mailbox_in_tls_rpt_rua, run_check
+from utils.pagination import paginate
 
 # Mismo texto armado en detect_unknown_senders() (reports_service.py) — si se
 # cambia esa frase, ajustar este patrón también, o el agrupado deja de reconocer
@@ -37,22 +38,26 @@ def get_max_domains(user_id):
 
 def get_user_plan_form_data(user_id):
     """Valores actuales del plan de un usuario, para precargar el formulario de edición del admin
-    — el default si todavía no tiene una fila propia en UserPlan."""
+    — el default si todavía no tiene una fila propia en UserPlan. `plan_label` es None cuando la
+    asignación es manual/vieja, sin catálogo (`plan_id` nulo) — ver UserPlan."""
     plan = UserPlan.query.filter_by(user_id=user_id).first()
     if not plan:
-        return {"max_domains": DEFAULT_MAX_DOMAINS, "expires_at_input": "", "is_expired": False}
+        return {"max_domains": DEFAULT_MAX_DOMAINS, "expires_at_input": "", "is_expired": False, "plan_label": None}
     is_expired = bool(plan.expires_at and plan.expires_at < utcnow())
     return {
         "max_domains": plan.max_domains,
         "expires_at_input": plan.expires_at.strftime("%Y-%m-%d") if plan.expires_at else "",
         "is_expired": is_expired,
+        "plan_label": plan.plan.label if plan.plan_id else None,
     }
 
 
 def update_user_plan(user_id, max_domains, expires_at):
-    """Crea o actualiza (upsert) el plan de un usuario — sólo lo llama el admin desde
-    /admin/usuarios/<id>/plan. `expires_at` ya viene como datetime (o None para sin vencimiento),
-    parseado por la ruta. Devuelve (plan, error)."""
+    """Crea o actualiza (upsert) el plan de un usuario con números sueltos — sólo lo llama el admin
+    desde /admin/usuarios/<id>/plan para una excepción puntual, no ligada a ningún plan del
+    catálogo (por eso limpia `plan_id`: para "asignar Free/Pago" usar assign_plan() en cambio).
+    `expires_at` ya viene como datetime (o None para sin vencimiento), parseado por la ruta.
+    Devuelve (plan, error)."""
     if not User.query.get(user_id):
         return None, "No se encontró ese usuario."
     if max_domains < 1:
@@ -62,10 +67,35 @@ def update_user_plan(user_id, max_domains, expires_at):
     if not plan:
         plan = UserPlan(user_id=user_id)
         db.session.add(plan)
+    plan.plan_id = None
     plan.max_domains = max_domains
     plan.expires_at = expires_at
     db.session.commit()
     return plan, None
+
+
+def assign_plan(user_id, plan_name):
+    """Asigna un plan del catálogo (Plan.name, ej. "free"/"paid") a un usuario: crea o actualiza su
+    UserPlan copiando el límite de dominios del plan y calculando el vencimiento (ahora +
+    trial_days si el plan lo tiene, sin vencimiento si no). Se usa tanto al registrarse (siempre
+    "free") como cuando el admin pasa a alguien a "paid" a mano desde /admin/usuarios — todavía no
+    hay cobro real, ver Plan.price_usd. Devuelve (user_plan, error)."""
+    if not User.query.get(user_id):
+        return None, "No se encontró ese usuario."
+    plan_def = Plan.query.filter_by(name=plan_name).first()
+    if not plan_def:
+        return None, f"No existe el plan '{plan_name}'."
+
+    user_plan = UserPlan.query.filter_by(user_id=user_id).first()
+    if not user_plan:
+        user_plan = UserPlan(user_id=user_id)
+        db.session.add(user_plan)
+
+    user_plan.plan_id = plan_def.id
+    user_plan.max_domains = plan_def.max_domains
+    user_plan.expires_at = utcnow() + timedelta(days=plan_def.trial_days) if plan_def.trial_days else None
+    db.session.commit()
+    return user_plan, None
 
 
 def count_active_domains(user_id):
@@ -406,18 +436,7 @@ def list_affected_senders(monitored, days=30, q="", page=1, per_page=20):
         for r in rows
     ]
 
-    total_items = len(items)
-    per_page = max(1, per_page)
-    total_pages = max(1, (total_items + per_page - 1) // per_page)
-    page = min(max(1, page), total_pages)
-    start = (page - 1) * per_page
-
-    return {
-        "items": items[start:start + per_page],
-        "total_items": total_items,
-        "page": page,
-        "total_pages": total_pages,
-    }
+    return paginate(items, page, per_page)
 
 
 COMPLIANCE_PASS_THRESHOLD = 95  # mismo umbral que el color verde en la tabla — un informe "aprobado" no puede verse ámbar/rojo.
@@ -481,18 +500,7 @@ def list_dmarc_reports(user_id, days=30, estado="todos", q="", page=1, per_page=
     elif estado == "con_fallas":
         items = [i for i in items if i["compliance_rate"] is None or i["compliance_rate"] < COMPLIANCE_PASS_THRESHOLD]
 
-    total_items = len(items)
-    per_page = max(1, per_page)
-    total_pages = max(1, (total_items + per_page - 1) // per_page)
-    page = min(max(1, page), total_pages)
-    start = (page - 1) * per_page
-
-    return {
-        "items": items[start:start + per_page],
-        "total_items": total_items,
-        "page": page,
-        "total_pages": total_pages,
-    }
+    return paginate(items, page, per_page)
 
 
 def get_dmarc_report_detail(report_id, user_id):
@@ -588,18 +596,7 @@ def list_domain_alerts(monitored, days=30, tipo="todos", q="", page=1, per_page=
 
     rows.sort(key=lambda r: r["last_seen"], reverse=True)
 
-    total_items = len(rows)
-    per_page = max(1, per_page)
-    total_pages = max(1, (total_items + per_page - 1) // per_page)
-    page = min(max(1, page), total_pages)
-    start = (page - 1) * per_page
-
-    return {
-        "items": rows[start:start + per_page],
-        "total_items": total_items,
-        "page": page,
-        "total_pages": total_pages,
-    }
+    return paginate(rows, page, per_page)
 
 
 def list_domain_senders(monitored, days=30, estado="todos", q="", page=1, per_page=20):
@@ -677,18 +674,7 @@ def list_domain_senders(monitored, days=30, estado="todos", q="", page=1, per_pa
 
     items.sort(key=lambda i: i["total"], reverse=True)
 
-    total_items = len(items)
-    per_page = max(1, per_page)
-    total_pages = max(1, (total_items + per_page - 1) // per_page)
-    page = min(max(1, page), total_pages)
-    start = (page - 1) * per_page
-
-    return {
-        "items": items[start:start + per_page],
-        "total_items": total_items,
-        "page": page,
-        "total_pages": total_pages,
-    }
+    return paginate(items, page, per_page)
 
 
 def get_compliance_overview(user_id, days=30):

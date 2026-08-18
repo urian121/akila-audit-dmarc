@@ -2,7 +2,8 @@ from sqlalchemy import func, or_
 
 from models import User, UserPlan, db
 from models.monitoring import utcnow
-from services.monitoring_service import get_max_domains
+from services.monitoring_service import assign_plan, get_max_domains
+from utils.pagination import paginate
 
 
 def register_user(name, email, password):
@@ -15,6 +16,7 @@ def register_user(name, email, password):
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
+    assign_plan(user.id, "free")  # toda cuenta nueva arranca en el plan Free (20 días de prueba)
     return user, None
 
 
@@ -84,20 +86,10 @@ def list_users(rol="todos", estado="todos", q="", page=1, per_page=20):
             "plan_max_domains": get_max_domains(u.id),
             "plan_expires_label": plan.expires_at.strftime("%d-%m-%Y") if plan and plan.expires_at else None,
             "plan_is_expired": bool(plan and plan.expires_at and plan.expires_at < utcnow()),
+            "plan_label": plan.plan.label if plan and plan.plan_id else None,
         })
 
-    total_items = len(items)
-    per_page = max(1, per_page)
-    total_pages = max(1, (total_items + per_page - 1) // per_page)
-    page = min(max(1, page), total_pages)
-    start = (page - 1) * per_page
-
-    return {
-        "items": items[start:start + per_page],
-        "total_items": total_items,
-        "page": page,
-        "total_pages": total_pages,
-    }
+    return paginate(items, page, per_page)
 
 
 def set_user_active(user_id, is_active, current_user_id):

@@ -13,7 +13,7 @@ from models.monitoring import (  # noqa: E402
     ForensicReport,
     MonitoredDomain,
 )
-from models.user import User, UserPlan  # noqa: E402
+from models.user import Plan, User, UserPlan  # noqa: E402
 
 __all__ = [
     "db",
@@ -25,4 +25,5 @@ __all__ = [
     "Alert",
     "User",
     "UserPlan",
+    "Plan",
 ]

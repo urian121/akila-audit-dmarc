@@ -113,9 +113,10 @@ def _boxed(flowables, bg=CARD_BG, border=BORDER, width=None):
     return table
 
 
-def _header_row(title, status, styles, width):
-    """Fila de encabezado de tarjeta: título a la izquierda, badge de estado a la derecha."""
-    row = Table([[Paragraph(escape(title), styles["card_title"]), _badge(status, styles)]], colWidths=[width * 0.7, width * 0.3])
+def _two_col_header(left, right, width, left_ratio=0.7):
+    """Fila de dos columnas sin padding, alineada al medio — título/nombre a la izquierda, badge/
+    fecha a la derecha. Mismo patrón reusado en tarjetas, riesgos, alertas y reportes del PDF."""
+    row = Table([[left, right]], colWidths=[width * left_ratio, width * (1 - left_ratio)])
     row.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -124,6 +125,11 @@ def _header_row(title, status, styles, width):
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return row
+
+
+def _header_row(title, status, styles, width):
+    """Fila de encabezado de tarjeta: título a la izquierda, badge de estado a la derecha."""
+    return _two_col_header(Paragraph(escape(title), styles["card_title"]), _badge(status, styles), width)
 
 
 def _bullets(items, style):
@@ -294,16 +300,11 @@ def _card_flowable(card, styles, width):
 def _risk_flowable(risk, styles, width):
     """Caja de un riesgo priorizado (título + severidad + mitigación + ejemplo DNS opcional)."""
     inner = width - 2 * CARD_PAD
-    header = Table(
-        [[Paragraph(escape(risk["title"]), styles["card_title"]),
-          Paragraph(escape(risk["severity"]), ParagraphStyle("sev", parent=styles["card_title"], fontSize=7.5, textColor=SEVERITY_COLORS.get(risk["severity"], MUTED), alignment=TA_RIGHT))]],
-        colWidths=[inner * 0.7, inner * 0.3],
+    header = _two_col_header(
+        Paragraph(escape(risk["title"]), styles["card_title"]),
+        Paragraph(escape(risk["severity"]), ParagraphStyle("sev", parent=styles["card_title"], fontSize=7.5, textColor=SEVERITY_COLORS.get(risk["severity"], MUTED), alignment=TA_RIGHT)),
+        inner,
     )
-    header.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
     content = [header, Paragraph(escape(risk["mitigation"]), styles["muted"])]
     example = risk.get("dns_example")
     if example:
@@ -339,14 +340,11 @@ def build_pdf_bytes(context):
     score = summary["score"]
     score_status = "ok" if score >= 80 else "warn" if score >= 50 else "fail"
     inner = width - 2 * CARD_PAD
-    score_line = Table([[
+    score_line = _two_col_header(
         Paragraph(escape(context["result_domain"]), styles["card_title"]),
         Paragraph(f"{score}% saludable", ParagraphStyle("score", parent=styles["card_title"], textColor=STATUS_COLORS[score_status], alignment=TA_RIGHT)),
-    ]], colWidths=[inner * 0.7, inner * 0.3])
-    score_line.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
+        inner,
+    )
     counts_line = Paragraph(
         f'<font color="{_hex(STATUS_COLORS["ok"])}">{summary["ok"]} ok</font> &middot; '
         f'<font color="{_hex(STATUS_COLORS["warn"])}">{summary["warn"]} advertencias</font> &middot; '
@@ -374,15 +372,11 @@ def _alert_flowable(alert, styles, width):
     """Caja de una alerta del dashboard de monitoreo: badge de tipo + fecha, y el mensaje debajo."""
     inner = width - 2 * CARD_PAD
     badge_color = STATUS_COLORS["fail"] if alert.kind == "unknown_sender" else STATUS_COLORS["warn"]
-    header = Table([[
+    header = _two_col_header(
         Paragraph(escape(alert.kind_label), ParagraphStyle("alert_badge", parent=styles["card_title"], fontSize=7.5, textColor=badge_color)),
         Paragraph(escape(alert.created_at.strftime("%Y-%m-%d %H:%M")) + " UTC", ParagraphStyle("alert_ts", parent=styles["muted"], alignment=TA_RIGHT)),
-    ]], colWidths=[inner * 0.5, inner * 0.5])
-    header.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
+        inner, left_ratio=0.5,
+    )
     content = [header, Spacer(1, 4), Paragraph(escape(alert.message), styles["body"])]
     return KeepTogether([_boxed(content, width=width), Spacer(1, 8)])
 
@@ -390,15 +384,11 @@ def _alert_flowable(alert, styles, width):
 def _report_flowable(report, styles, width):
     """Caja de un reporte DMARC agregado: organización + fecha de recepción, y cada remitente real debajo."""
     inner = width - 2 * CARD_PAD
-    header = Table([[
+    header = _two_col_header(
         Paragraph(escape(report.org_name or "origen desconocido"), styles["card_title"]),
         Paragraph(f"recibido {escape(report.received_at.strftime('%Y-%m-%d %H:%M'))} UTC", ParagraphStyle("report_ts", parent=styles["muted"], alignment=TA_RIGHT)),
-    ]], colWidths=[inner * 0.6, inner * 0.4])
-    header.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
+        inner, left_ratio=0.6,
+    )
     content = [header]
     records = report.records.all() if hasattr(report.records, "all") else list(report.records)
     # Un reporte real puede traer cientos de remitentes (visto: 414 en uno solo) —

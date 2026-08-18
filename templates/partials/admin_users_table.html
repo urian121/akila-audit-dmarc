@@ -68,7 +68,7 @@
                 {% if row.plan_max_domains is none %}
                   Ilimitado
                 {% else %}
-                  {{ row.plan_max_domains }} dominio{{ '' if row.plan_max_domains == 1 else 's' }}
+                  {% if row.plan_label %}{{ row.plan_label }} · {% endif %}{{ row.plan_max_domains }} dominio{{ '' if row.plan_max_domains == 1 else 's' }}
                   {%- if row.plan_expires_label %}
                     <span class="{{ 'text-amber-600' if row.plan_is_expired else 'text-zinc-400' }}">
                       · {{ 'venció' if row.plan_is_expired else 'vence' }} {{ row.plan_expires_label }}

@@ -1,3 +1,4 @@
+{% from "partials/macros.html" import rate_color %}
 <div id="senders-table">
   <form
     id="senders-filters-form"
@@ -60,14 +61,14 @@
                 {% if item.spf_rate is none %}
                   <span class="text-zinc-400">—</span>
                 {% else %}
-                  <span class="{{ 'text-emerald-600' if item.spf_rate >= 95 else ('text-amber-600' if item.spf_rate >= 80 else 'text-rose-600') }} font-medium">{{ item.spf_rate }}%</span>
+                  <span class="{{ rate_color(item.spf_rate) }} font-medium">{{ item.spf_rate }}%</span>
                 {% endif %}
               </td>
               <td class="px-3 py-2.5 whitespace-nowrap">
                 {% if item.dkim_rate is none %}
                   <span class="text-zinc-400">—</span>
                 {% else %}
-                  <span class="{{ 'text-emerald-600' if item.dkim_rate >= 95 else ('text-amber-600' if item.dkim_rate >= 80 else 'text-rose-600') }} font-medium">{{ item.dkim_rate }}%</span>
+                  <span class="{{ rate_color(item.dkim_rate) }} font-medium">{{ item.dkim_rate }}%</span>
                 {% endif %}
               </td>
               <td class="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{{ item.last_seen.strftime('%Y-%m-%d') if item.last_seen else '—' }}</td>

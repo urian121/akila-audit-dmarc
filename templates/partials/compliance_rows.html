@@ -1,3 +1,4 @@
+{% from "partials/macros.html" import rate_color %}
 <tbody
   id="compliance-rows"
   {% if protocol_status is none %}
@@ -24,7 +25,7 @@
         {% if row.pass_rate is none %}
           <span class="text-zinc-400">—</span>
         {% else %}
-          <span class="{{ 'text-emerald-600' if row.pass_rate >= 95 else ('text-amber-600' if row.pass_rate >= 80 else 'text-rose-600') }} font-medium">{{ row.pass_rate }}%</span>
+          <span class="{{ rate_color(row.pass_rate) }} font-medium">{{ row.pass_rate }}%</span>
         {% endif %}
       </td>
       <td class="px-3 py-2.5">

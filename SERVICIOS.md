@@ -51,11 +51,15 @@ colega) donde se puede:
   que el resto.
 - Descargar un PDF con el resumen del panel.
 
-Cada cuenta cliente tiene un límite de cuántos dominios puede tener monitoreando **a la vez** (por
-defecto, 1) — funciona como un plan: si necesitás monitorear más, un administrador te sube el
-límite desde el panel de usuarios. Pausar un dominio no borra nada de su historial, así que
-reactivarlo más adelante no pierde información, y libera lugar para registrar otro mientras tanto.
-Las cuentas administradoras no tienen este límite.
+Cada cuenta cliente tiene un plan que le dice cuántos dominios puede tener monitoreando **a la
+vez**. Hoy hay dos: **Gratis** (1 dominio, con 20 días de prueba) y **Pago** (5 dominios, USD
+12/mes). Toda cuenta nueva arranca sola en el plan Gratis apenas se registra — no hace falta pedir
+nada. Si se vencen los 20 días y no pasó a Pago, sus dominios se pausan solos (no se borra nada,
+es reversible). Pasar a Pago hoy todavía es manual — un administrador lo activa desde el panel de
+usuarios después de que la persona pague por otro medio; todavía no hay cobro automático dentro de
+la aplicación. Pausar un dominio no borra nada de su historial, así que reactivarlo más adelante no
+pierde información, y libera lugar para registrar otro mientras tanto. Las cuentas administradoras
+no tienen límite de plan.
 
 ## 3. Alertas automáticas
 
@@ -149,9 +153,10 @@ tuviera una sesión abierta), pero no borra nada ni afecta sus dominios monitore
 vigilándose igual. Por seguridad, nadie puede desactivarse a sí mismo ni desactivar al último
 administrador que quede activo.
 
-Desde ese mismo panel, un administrador también puede editar el plan de cualquier usuario: cuántos
-dominios activos puede tener y hasta cuándo (fecha de vencimiento opcional). Al vencer, el usuario
-vuelve solo al límite por defecto — no hace falta que un admin lo edite a mano para "revertirlo".
+Desde ese mismo panel, un administrador también puede cambiarle el plan a cualquier usuario — con
+un botón para asignar Gratis o Pago directo, o ajustando a mano el límite de dominios y la fecha
+de vencimiento para una excepción puntual. Al vencer un plan sin renovarse, el usuario vuelve solo
+al límite por defecto — no hace falta que un admin lo edite a mano para "revertirlo".
 
 La lista de usuarios también muestra, de cada cuenta: cuándo se registró, cuándo fue su última
 sesión iniciada (o "Nunca" si todavía no entró), si está activa o no, y su plan — toda la

@@ -35,6 +35,29 @@
         </div>
       {% endif %}
 
+      <div class="mb-6">
+        <p class="text-[10px] tracking-wide uppercase text-zinc-500 mb-2">
+          Plan actual: <span class="text-zinc-700 normal-case">{{ form_data.plan_label or "Personalizado (sin plan del catálogo)" }}</span>
+        </p>
+        <div class="flex flex-wrap gap-2">
+          {% for p in plans %}
+            <form method="POST" action="{{ url_for('admin_assign_plan', user_id=target_user.id) }}">
+              <input type="hidden" name="plan_name" value="{{ p.name }}">
+              <button
+                type="submit"
+                class="px-3 py-1.5 rounded-md text-xs font-medium tracking-wide bg-zinc-100 text-zinc-600 hover:bg-[#2d2147] hover:text-white transition-colors"
+              >
+                Asignar {{ p.label }} ({{ p.max_domains }} dominio{{ '' if p.max_domains == 1 else 's' }}{% if p.trial_days %}, {{ p.trial_days }} días{% endif %})
+              </button>
+            </form>
+          {% endfor %}
+        </div>
+        <p class="mt-2 text-[10.5px] text-zinc-400 leading-snug">
+          Todavía no hay cobro real — pasar a Pago acá es manual, después de que la persona pague por otro medio.
+        </p>
+      </div>
+
+      <p class="text-[10px] tracking-wide uppercase text-zinc-500 mb-2">O ajustá el número a mano</p>
       <form method="POST" class="flex flex-col gap-4 max-w-sm">
         <div>
           <label class="block mb-1.5 text-[10px] tracking-wide uppercase text-zinc-500">

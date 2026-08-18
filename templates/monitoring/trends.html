@@ -1,4 +1,5 @@
 {% extends "layout.html" %}
+{% from "partials/macros.html" import rate_color %}
 {% block title %}Akila - Tendencias{% endblock %}
 {% block content %}
     <div class="max-w-5xl mx-auto px-6 py-16">
@@ -113,7 +114,7 @@
                 <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Mensajes totales</p>
               </div>
               <div class="bg-zinc-50 rounded-md p-3 text-center">
-                <p class="text-xl font-semibold {{ 'text-emerald-600' if impact.pass_rate >= 95 else ('text-amber-600' if impact.pass_rate >= 80 else 'text-rose-600') }}">{{ impact.pass_rate }}%</p>
+                <p class="text-xl font-semibold {{ rate_color(impact.pass_rate) }}">{{ impact.pass_rate }}%</p>
                 <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Tasa de cumplimiento</p>
               </div>
               <div class="bg-zinc-50 rounded-md p-3 text-center">
@@ -192,7 +193,7 @@
                 <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Se vería <span id="objetivo-verbo">afectado</span></p>
               </div>
               <div class="bg-zinc-50 rounded-md p-3 text-center">
-                <p class="text-xl font-semibold {{ 'text-emerald-600' if impact.pass_rate >= 95 else ('text-amber-600' if impact.pass_rate >= 80 else 'text-rose-600') }}">{{ impact.pass_rate }}%</p>
+                <p class="text-xl font-semibold {{ rate_color(impact.pass_rate) }}">{{ impact.pass_rate }}%</p>
                 <p class="text-[10px] text-zinc-500 uppercase tracking-wide mt-1">Sin impacto</p>
               </div>
             </div>

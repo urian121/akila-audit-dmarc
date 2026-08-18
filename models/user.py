@@ -44,13 +44,40 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
 
 
+class Plan(db.Model):
+    """Catálogo de planes disponibles — hoy 2 filas fijas, sembradas a mano una sola vez (ver
+    AGENTS.md): "free" (1 dominio, prueba de 20 días) y "paid" (5 dominios, USD 12/mes). No hay
+    self-service para crear planes nuevos desde la UI; si hiciera falta un tercero, se agrega con
+    una fila más acá, a mano.
+
+    Todavía NO hay cobro real (sin pasarela integrada) — `price_usd` es informativo nada más, y
+    pasar a "paid" hoy es una acción manual del admin desde /admin/usuarios, no un checkout real."""
+
+    __tablename__ = "plans"
+
+    id = db.Column(db.Integer, primary_key=True)
+    # slug estable en inglés (referenciado en código, ej. assign_plan(user_id, "free")) — no
+    # renombrar sin actualizar services/monitoring_service.py.
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    label = db.Column(db.String(100), nullable=False)  # nombre en español para mostrar en la UI
+    max_domains = db.Column(db.Integer, nullable=False)
+    price_usd = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    # Días de vigencia desde que se asigna el plan (None = sin vencimiento). Hoy solo "free" lo usa
+    # (20 días de prueba); "paid" queda indefinido hasta que exista cobro real que lo renueve.
+    trial_days = db.Column(db.Integer, nullable=True)
+
+
 class UserPlan(db.Model):
     """Límite de dominios ACTIVOS que un usuario puede tener en monitoreo — funciona como un plan.
 
     Un usuario sin fila propia acá no está "sin plan": simplemente usa DEFAULT_MAX_DOMAINS (ver
     get_max_domains() en services/monitoring_service.py) — así no hace falta crear ni backfillear
-    una fila por cada usuario existente para que el límite ya aplique. Solo hace falta una fila
-    cuando alguien necesita un límite distinto del default (upgrade manual, excepción puntual).
+    una fila por cada usuario existente para que el límite ya aplique.
+
+    `max_domains`/`expires_at` son los campos que de verdad se hacen cumplir (get_max_domains() los
+    lee directo) — `plan_id` es solo la referencia a qué plan del catálogo los originó, para
+    mostrarlo en la UI y como acceso rápido de "asignar Free/Pago". Puede quedar `None` (asignación
+    manual/vieja, de antes de que existiera el catálogo) sin que nada se rompa.
 
     Solo cuentan los dominios con is_active=True — desactivar uno libera un cupo para registrar u
     otro (decisión explícita: el límite es de "en uso ahora", no de "registrados alguna vez")."""
@@ -59,12 +86,15 @@ class UserPlan(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
-    plan_name = db.Column(db.String(50), nullable=False, default="free")
+    plan_id = db.Column(db.Integer, db.ForeignKey("plans.id"), nullable=True)
     max_domains = db.Column(db.Integer, nullable=False, default=DEFAULT_MAX_DOMAINS)
     # expires_at nulo = sin vencimiento (permanente). Vencido: get_max_domains() en
     # services/monitoring_service.py vuelve sola a DEFAULT_MAX_DOMAINS, no bloquea todo — un
-    # usuario con dominios ya activos por encima del nuevo límite no pierde ninguno (el límite solo
-    # se hace cumplir al querer activar uno más), mismo criterio que el resto del sistema de planes.
+    # usuario con dominios ya activos por encima del nuevo límite no pierde ninguno de inmediato al
+    # solo consultar el límite (eso lo revisa jobs/deactivate_expired_trials.py aparte, que si los
+    # desactiva de verdad cuando el plan Free vence sin pasar a Pago).
     expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    plan = db.relationship("Plan")

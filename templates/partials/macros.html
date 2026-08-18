@@ -1,0 +1,3 @@
+{% macro rate_color(value) -%}
+{%- if value >= 95 -%}text-emerald-600{%- elif value >= 80 -%}text-amber-600{%- else -%}text-rose-600{%- endif -%}
+{%- endmacro %}

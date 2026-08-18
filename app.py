@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 
-from models import DomainSnapshot, User, db
+from models import DomainSnapshot, Plan, User, db
 from services.ai_summary import generate_summary
 from services.auth_service import authenticate, list_users, register_user, set_user_active, update_email, update_password
 from services.card_builder import DMARC_POLICY_LABELS, build_cards, build_risks, build_summary
@@ -16,7 +16,7 @@ from services.domain_health_analysis import generate_health_analysis
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
 from models.user import DEFAULT_MAX_DOMAINS
-from services.monitoring_service import get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_affected_senders, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
+from services.monitoring_service import assign_plan, get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_affected_senders, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
 from services.forensic_reports_service import ingest_forensic_report
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
@@ -370,12 +370,13 @@ def admin_edit_plan(user_id):
     target_user = User.query.get(user_id)
     if target_user is None:
         abort(404)
+    plans = Plan.query.order_by(Plan.id).all()
 
     if request.method == "GET":
         form_data = get_user_plan_form_data(user_id)
         return render_template(
             "admin/edit_plan.html", target_user=target_user, form_data=form_data,
-            default_max_domains=DEFAULT_MAX_DOMAINS,
+            default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans,
         )
 
     max_domains_raw = request.form.get("max_domains", "").strip()
@@ -403,16 +404,41 @@ def admin_edit_plan(user_id):
         _plan, error = update_user_plan(user_id, max_domains, expires_at)
 
     form_data = get_user_plan_form_data(user_id) if not error else {
-        "max_domains": max_domains_raw, "expires_at_input": expires_at_raw, "is_expired": False,
+        "max_domains": max_domains_raw, "expires_at_input": expires_at_raw, "is_expired": False, "plan_label": None,
     }
     if error:
         return render_template(
             "admin/edit_plan.html", target_user=target_user, form_data=form_data,
-            default_max_domains=DEFAULT_MAX_DOMAINS, error=error,
+            default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans, error=error,
         ), 400
     return render_template(
         "admin/edit_plan.html", target_user=target_user, form_data=form_data,
-        default_max_domains=DEFAULT_MAX_DOMAINS, success="Plan actualizado correctamente.",
+        default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans, success="Plan actualizado correctamente.",
+    )
+
+
+@app.route("/admin/usuarios/<int:user_id>/plan/asignar", methods=["POST"])
+@admin_required
+def admin_assign_plan(user_id):
+    """Atajo rápido para asignar un plan del catálogo (Free/Pago) a un usuario — alternativa a
+    editar el límite/vencimiento a mano, más abajo en la misma página."""
+    target_user = User.query.get(user_id)
+    if target_user is None:
+        abort(404)
+    plans = Plan.query.order_by(Plan.id).all()
+
+    plan_name = request.form.get("plan_name", "")
+    _user_plan, error = assign_plan(user_id, plan_name)
+    form_data = get_user_plan_form_data(user_id)
+    if error:
+        return render_template(
+            "admin/edit_plan.html", target_user=target_user, form_data=form_data,
+            default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans, error=error,
+        ), 400
+    return render_template(
+        "admin/edit_plan.html", target_user=target_user, form_data=form_data,
+        default_max_domains=DEFAULT_MAX_DOMAINS, plans=plans,
+        success=f"Plan actualizado a {form_data['plan_label']}.",
     )
 
 
@@ -874,15 +900,28 @@ def _run_recheck_domains_job():
         print(f"[scheduler] error en recheck_domains: {error}")
 
 
+def _run_deactivate_expired_trials_job():
+    """Corre jobs/deactivate_expired_trials.py dentro del mismo proceso web (ver start_scheduler())."""
+    from jobs.deactivate_expired_trials import main as deactivate_expired_trials_main  # import diferido
+    try:
+        deactivate_expired_trials_main()
+    except Exception as error:
+        db.session.rollback()
+        print(f"[scheduler] error en deactivate_expired_trials: {error}")
+
+
 def start_scheduler():
     """Programa la vigilancia DNS periódica (antes un Railway Cron aparte, servicio 'recheck-domains-cron')
-    para correr dentro de este mismo proceso — sólo válido mientras el servicio corra una única instancia
-    (sin réplicas), o el job se dispararía una vez por instancia."""
+    y la desactivación de dominios con plan vencido, para correr dentro de este mismo proceso — sólo
+    válido mientras el servicio corra una única instancia (sin réplicas), o los jobs se dispararían
+    una vez por instancia."""
     from apscheduler.schedulers.background import BackgroundScheduler
 
     interval_hours = float(os.environ.get("RECHECK_DOMAINS_INTERVAL_HOURS", "12"))
+    trials_interval_hours = float(os.environ.get("CHECK_TRIALS_INTERVAL_HOURS", "6"))
     scheduler = BackgroundScheduler(timezone="UTC")
     scheduler.add_job(_run_recheck_domains_job, "interval", hours=interval_hours, next_run_time=datetime.now(timezone.utc))
+    scheduler.add_job(_run_deactivate_expired_trials_job, "interval", hours=trials_interval_hours, next_run_time=datetime.now(timezone.utc))
     scheduler.start()
 
 
