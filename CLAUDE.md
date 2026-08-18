@@ -58,7 +58,7 @@ Capas: `app.py` (solo rutas Flask, arma la respuesta) → `services/` (lógica d
 
 Las páginas de análisis (`/tendencias`, dashboard por dominio, "Informes DMARC") todas leen de esos mismos `AggregateReport`/`AggregateRecord` — `services/monitoring_service.py` tiene las funciones de agregación (SQL con `GROUP BY`, no loops en Python, por rendimiento con muchos informes).
 
-**Auth**: Flask-Login, `models/user.py`. Rutas del checker/monitoreo gateadas con `@login_required`; la API JSON pública (`/api/check/<domain>`) y las rutas por `access_token` quedan sin gate a propósito (el token es su propio mecanismo de acceso, tipo link mágico).
+**Auth**: Flask-Login, `models/user.py`. Rutas del checker/monitoreo gateadas con `@login_required`, incluidas todas las rutas por `access_token` (el dashboard de un dominio ya no es un link mágico público — hace falta sesión propia y ser el dueño, o admin, ver `get_owned_domain_or_404()` en `AGENTS.md`). La única ruta sin gate a propósito es la API JSON pública (`/api/check/<domain>`), que no expone datos de ningún usuario.
 
 **Base de datos**: Postgres únicamente, sin Alembic — `db.create_all()` solo crea tablas nuevas, cualquier columna nueva en una tabla existente se agrega con `ALTER TABLE` manual (hay usuarios y datos reales en producción).
 

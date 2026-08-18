@@ -97,6 +97,22 @@ def require_api_key(view):
     return wrapped
 
 
+def get_owned_domain_or_404(access_token):
+    """Resuelve un dominio monitoreado por su access_token para las rutas web (sesión de
+    Flask-Login) y exige que sea del usuario logueado — 404 si no existe o si es de otro
+    usuario, mismo criterio que admin_required (no confirmar existencia a quien no es dueño).
+    Los admins pueden ver cualquier dominio, igual que ya pueden ver/editar cualquier cuenta
+    desde /admin/usuarios.
+
+    El dashboard por token dejó de ser un "link mágico" público (compartible sin cuenta) — ahora
+    hace falta sesión propia y ser el dueño (o admin) para entrar, a pedido explícito del usuario.
+    Todas las rutas /monitoreo/<token>... y /tendencias/<token>... llaman esto antes que nada."""
+    monitored = get_domain_by_token(access_token)
+    if monitored is None or (monitored.user_id != current_user.id and not current_user.is_admin):
+        abort(404)
+    return monitored
+
+
 @app.errorhandler(404)
 def handle_not_found(error):
     """Ruta inexistente: página 404 propia que redirige sola al inicio a los pocos segundos (meta refresh), con un botón para ir de inmediato.
@@ -586,11 +602,10 @@ def monitoring_dns_preview():
 
 
 @app.route("/monitoreo/<access_token>/configuracion-dns", methods=["GET"])
+@login_required
 def monitoring_dns(access_token):
     """Vuelve a mostrar las instrucciones de DNS (host/tipo/valor) de un dominio ya registrado."""
-    monitored = get_domain_by_token(access_token)
-    if monitored is None:
-        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
+    monitored = get_owned_domain_or_404(access_token)
     dns, extra_dns = build_dns_screen_data(monitored.domain, DMARC_REPORTS_MAILBOX)
     return render_template(
         "monitoring/registered.html",
@@ -603,20 +618,20 @@ def monitoring_dns(access_token):
 
 
 @app.route("/monitoreo/<access_token>/verificar-dns", methods=["POST"])
+@login_required
 def monitoring_verify_dns(access_token):
     """htmx: vuelve a consultar el DNS en vivo y guarda si ya se publicó la casilla de monitoreo en el rua=."""
+    get_owned_domain_or_404(access_token)
     monitored = verify_dns(access_token, DMARC_REPORTS_MAILBOX)
-    if monitored is None:
-        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
     return render_template("partials/dns_verify_status.html", monitored=monitored)
 
 
 @app.route("/monitoreo/<access_token>/verificar-tls-rpt", methods=["POST"])
+@login_required
 def monitoring_verify_tls_rpt(access_token):
     """htmx: vuelve a consultar el DNS en vivo y guarda si ya se publicó la casilla de monitoreo en el rua= de TLS-RPT."""
+    get_owned_domain_or_404(access_token)
     monitored = verify_tls_rpt(access_token, DMARC_REPORTS_MAILBOX)
-    if monitored is None:
-        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
     return render_template("partials/tls_rpt_verify_status.html", monitored=monitored)
 
 
@@ -715,9 +730,7 @@ def trends_domain(access_token):
     El estado del protocolo (chequeo de DNS en vivo) NO se calcula acá — se carga aparte vía htmx
     (trends_protocol_status) para no bloquear esta página con una consulta de DNS que puede tardar
     varios segundos; antes hacía que todo /tendencias se sintiera lento."""
-    monitored = get_domain_by_token(access_token)
-    if not monitored or monitored.user_id != current_user.id:
-        abort(404)
+    monitored = get_owned_domain_or_404(access_token)
     rango = request.args.get("rango", "30d")
     if rango not in TRENDS_RANGE_DAYS:
         rango = "30d"
@@ -746,9 +759,7 @@ def trends_domain(access_token):
 def trends_affected_senders(access_token):
     """Fragmento htmx: tabla de emisores afectados del análisis de impacto, filtrada/paginada —
     separada de trends_domain para que buscar/paginar no recalcule toda la página de Tendencias."""
-    monitored = get_domain_by_token(access_token)
-    if not monitored or monitored.user_id != current_user.id:
-        abort(404)
+    monitored = get_owned_domain_or_404(access_token)
     rango = request.args.get("rango", "30d")
     if rango not in TRENDS_RANGE_DAYS:
         rango = "30d"
@@ -766,9 +777,7 @@ def trends_affected_senders(access_token):
 def trends_protocol_status(access_token):
     """Fragmento htmx: chequeo de DNS en vivo (mismo pipeline que el checker de '/'), cargado aparte
     de trends_domain para no bloquear la carga inicial de Tendencias con una consulta de DNS lenta."""
-    monitored = get_domain_by_token(access_token)
-    if not monitored or monitored.user_id != current_user.id:
-        abort(404)
+    monitored = get_owned_domain_or_404(access_token)
     try:
         protocol_cards = build_cards(run_check(monitored.domain))
     except Exception as error:
@@ -784,9 +793,7 @@ def trends_ai_analysis(access_token):
     a partir de los mismos datos ya calculados en trends_domain — no repite el chequeo de DNS en vivo,
     ese ya se carga aparte en trends_protocol_status. Cargado en su propia petición para no sumarle
     la latencia de la IA a la carga inicial de la página."""
-    monitored = get_domain_by_token(access_token)
-    if not monitored or monitored.user_id != current_user.id:
-        abort(404)
+    monitored = get_owned_domain_or_404(access_token)
     rango = request.args.get("rango", "30d")
     if rango not in TRENDS_RANGE_DAYS:
         rango = "30d"
@@ -802,12 +809,11 @@ def trends_ai_analysis(access_token):
 
 
 @app.route("/monitoreo/<access_token>/alertas", methods=["GET"])
+@login_required
 def monitoring_dashboard_alerts(access_token):
     """Fragmento htmx: tabla de alertas del dominio, filtrada/paginada — separada de
     monitoring_dashboard por el mismo motivo que monitoring_dashboard_senders."""
-    monitored = get_domain_by_token(access_token)
-    if monitored is None:
-        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
+    monitored = get_owned_domain_or_404(access_token)
 
     rango = request.args.get("rango", "30d")
     if rango == "todos":
@@ -829,13 +835,12 @@ def monitoring_dashboard_alerts(access_token):
 
 
 @app.route("/monitoreo/<access_token>/remitentes", methods=["GET"])
+@login_required
 def monitoring_dashboard_senders(access_token):
     """Fragmento htmx: tabla de remitentes reales del dominio, filtrada/paginada — separada de
     monitoring_dashboard para que cambiar un filtro solo recalcule la tabla, no toda la página
     (alertas, desglose por subdominio, reportes forenses)."""
-    monitored = get_domain_by_token(access_token)
-    if monitored is None:
-        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
+    monitored = get_owned_domain_or_404(access_token)
 
     rango = request.args.get("rango", "30d")
     if rango == "todos":
@@ -856,11 +861,11 @@ def monitoring_dashboard_senders(access_token):
 
 
 @app.route("/monitoreo/<access_token>", methods=["GET"])
+@login_required
 def monitoring_dashboard(access_token):
     """Dashboard privado de un dominio monitoreado: remitentes reales (agrupados y filtrables) y alertas generadas."""
+    get_owned_domain_or_404(access_token)
     data = get_dashboard_data(access_token)
-    if data is None:
-        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
 
     rango = request.args.get("rango", "30d")
     if rango == "todos":
@@ -889,11 +894,11 @@ def monitoring_dashboard(access_token):
 
 
 @app.route("/monitoreo/<access_token>/reporte-pdf", methods=["GET"])
+@login_required
 def monitoring_dashboard_pdf(access_token):
     """Genera y descarga el PDF del dashboard de monitoreo (alertas recientes + reportes DMARC recibidos)."""
+    get_owned_domain_or_404(access_token)
     data = get_dashboard_data(access_token)
-    if data is None:
-        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
     try:
         context = {**data, "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
         pdf_bytes = build_dashboard_pdf_bytes(context)
@@ -908,6 +913,7 @@ def monitoring_dashboard_pdf(access_token):
 
 
 @app.route("/monitoreo/<access_token>/toggle", methods=["POST"])
+@login_required
 def monitoring_toggle(access_token):
     """htmx: activa o desactiva el monitoreo de un dominio (no borra su historial) y devuelve el
     fragmento de estado actualizado — no recarga la página. El toast de confirmación se dispara
@@ -915,11 +921,9 @@ def monitoring_toggle(access_token):
     el header HX-Trigger: ese evento se dispara sobre el <form> que hizo la petición, y ese <form>
     queda desconectado del DOM justo cuando se reemplaza #toggle-status-region (swap outerHTML),
     así que nunca llega a burbujear hasta un listener en document.body."""
+    get_owned_domain_or_404(access_token)
     activar = request.form.get("activar") == "1"
     monitored, error = set_active(access_token, activar)
-    if monitored is None:
-        return render_template("partials/error.html", message="No se encontró ese dashboard."), 404
-
     data = get_dashboard_data(access_token)
     if error == "limit_reached":
         limit = get_max_domains(monitored.user_id)

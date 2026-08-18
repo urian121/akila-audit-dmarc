@@ -42,9 +42,8 @@ Al registrar un dominio, la aplicación te da las instrucciones exactas de qué 
 por el modo más seguro: solo observar, sin bloquear nada) y te deja verificar en vivo si ya
 quedó bien publicado.
 
-A partir de ahí, cada dominio registrado tiene su propio panel privado (accesible por un link
-único, sin necesidad de compartir usuario ni contraseña — útil para mandárselo a un cliente o
-colega) donde se puede:
+A partir de ahí, cada dominio registrado tiene su propio panel privado, accesible solo por su
+dueño con su sesión iniciada (o por un administrador) — donde se puede:
 
 - Activar o desactivar la vigilancia en cualquier momento sin perder el historial.
 - Ver de un vistazo si algún subdominio (facturación, marketing, etc.) está peor configurado

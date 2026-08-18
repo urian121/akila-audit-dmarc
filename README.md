@@ -53,7 +53,7 @@ Endpoint HTML consumido por htmx (`hx-post` del formulario del frontend), recibe
 
 ### `GET/POST /registro`, `GET/POST /ingresar`, `POST /salir`
 
-Crear cuenta, iniciar sesión y cerrar sesión (`Flask-Login`). Necesarios para usar el checker (`/`, `/check`) y el monitoreo (`/monitoreo`, `/monitoreos/`) — la API JSON (`/api/check/<domain>`) y las rutas por `access_token` del dashboard quedan públicas a propósito, ver `AGENTS.md`.
+Crear cuenta, iniciar sesión y cerrar sesión (`Flask-Login`). Necesarios para usar el checker (`/`, `/check`), el monitoreo (`/monitoreo`, `/monitoreos/`) y también las rutas por `access_token` del dashboard (`/monitoreo/<token>...`, `/tendencias/<token>...`) — hace falta sesión propia y ser el dueño del dominio (o admin), ya no son públicas. La única ruta pública a propósito es la API JSON del checker (`/api/check/<domain>`), ver `AGENTS.md`.
 
 ### `GET /api/check/<domain>`
 
