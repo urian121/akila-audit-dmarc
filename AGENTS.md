@@ -148,6 +148,7 @@
 * **[checkdmarc](https://github.com/domainaware/checkdmarc)**: SPF/DMARC/BIMI/MTA-STS/TLS-RPT/MX/DNSSEC/NS/SOA.
 * **[dkimpy](https://pypi.org/project/dkimpy/)**: todo lo de DKIM.
 * **[parsedmarc](https://github.com/domainaware/parsedmarc)**: ingesta de reportes DMARC/SMTP TLS vía IMAP (solo monitoreo continuo). Consultar su documentación ante dudas de `config.ini`/`PARSEDMARC_*`/esquema del JSON — no asumir sintaxis.
+  * **`[mailbox] reports_folder`/`archive_folder`/`delete` (confirmado contra la documentación oficial de parsedmarc, no asumido)**: en modo watcher, parsedmarc mueve (o borra, si `delete = True`) **todo** lo que encuentre en `reports_folder`, sea o no un reporte DMARC válido — no hay forma de "solo leer sin tocar nada" sin usar `test = True`, que a su vez rompe la app: `ingest_aggregate_report()` en `services/reports_service.py` no dedupea por `report_id`, así que si el correo nunca se mueve/borra el worker lo re-procesaría y duplicaría en cada corrida. Por eso `reports_folder` **nunca** debe ser `INBOX` de una casilla de uso normal (pasó una vez, movió correo real de una persona a carpetas nuevas sin que nadie lo pidiera) — tiene que ser una casilla dedicada, o al menos una etiqueta aislada por filtro (`to:` la dirección exacta del `rua=`), ver `README.md` para el mecanismo completo. `delete = True` sólo es seguro dentro de esa etiqueta aislada.
 
 ## Pendiente (fuera del alcance de código)
 

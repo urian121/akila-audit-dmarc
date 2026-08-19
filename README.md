@@ -97,7 +97,13 @@ No es parte del deploy de esta app — es la configuración del **worker de pars
 
 El archivo real (`config/parsedmarc.ini`, no el `.example`) está en `.gitignore` a propósito — nunca se sube al repo porque tiene la contraseña de la casilla en texto plano. Para producción, en vez de subir el archivo, se configuran las mismas claves como variables de entorno con prefijo `PARSEDMARC_<SECCIÓN>_<CLAVE>` (ver `.env-example`) — parsedmarc las lee directo, sin necesitar el `.ini`.
 
-**Importante**: la casilla configurada ahí debe ser una **dedicada sólo a recibir reportes DMARC**, nunca una casilla de uso normal — parsedmarc mueve automáticamente cualquier correo que no sea un reporte válido a una carpeta de archivo (`archive_folder`), así que apuntarlo a un correo de trabajo real termina archivando esos correos sin querer.
+**Importante**: la casilla configurada ahí debe ser una **dedicada sólo a recibir reportes DMARC**, nunca una casilla de uso normal — parsedmarc mueve (o borra, si `delete = True`) automáticamente **todo** lo que encuentre en `reports_folder`, sea o no un reporte DMARC válido. Pasó una vez: apuntado a un Gmail de uso normal, movió correo real de la persona a carpetas nuevas (`Archive/Aggregate`, `Archive/Failure`, `Archive/Invalid`, etc.) sin que nadie lo pidiera.
+
+**Si no se puede tener una casilla 100% dedicada** (ej. es el Gmail normal de alguien), la forma segura de igual manera aislar los reportes:
+
+1. Crear un filtro en esa casilla que capture **solo** lo que llega a la dirección exacta configurada en el `rua=`/`ruf=` del DNS (`DMARC_REPORTS_MAILBOX`) — por ejemplo `to: reports@tudominio.com` — y le aplique una etiqueta nueva (ej. `DMARC-Reports`). Como esa dirección nunca la usa una persona para mandar/recibir correo normal, el filtro no puede agarrar nada que no sea un reporte real.
+2. Configurar `reports_folder = DMARC-Reports` (esa etiqueta, no `INBOX`) — así parsedmarc sólo escanea ese espacio aislado, nunca el resto de la bandeja.
+3. Recién ahí es seguro usar `delete = True` (ver `config/parsedmarc.ini.example`) — nada real puede caer en esa etiqueta, así que "borrar tras procesar" no arriesga nada, y de paso deja de crear subcarpetas de archivo nuevas.
 
 **Estado actual (recordatorio)**: ya existe un servicio `parsedmarc-worker` desplegado en Railway, en el mismo proyecto que la app web (`akila-dmarc`). Corre `parsedmarc` de forma continua, escucha por IMAP la casilla configurada en sus variables `PARSEDMARC_IMAP_*`, y manda cada reporte agregado que encuentra a `https://akila-dmarc-production.up.railway.app/webhooks/dmarc-aggregate/<DMARC_WEBHOOK_SECRET>` (el secreto real está sólo en las variables de Railway de ambos servicios, no acá).
 

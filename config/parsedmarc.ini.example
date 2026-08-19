@@ -19,8 +19,17 @@ save_failure = True
 ; reporte nuevo, en vez de hacer polling. Este proceso debe correr como
 ; servicio de larga duración (Worker en Railway), no como cron.
 watch = True
-reports_folder = INBOX
+; reports_folder NUNCA debe ser "INBOX" si esta casilla también recibe correo real (de trabajo o
+; personal) — parsedmarc mueve/borra automáticamente TODO lo que encuentre ahí, incluido lo que no
+; sea un reporte DMARC válido (así se movió/perdió correo real una vez, ver README.md). La casilla
+; tiene que ser dedicada, o si no se puede, crear un filtro que etiquete solo los reportes reales
+; (ej. por "to:" la dirección exacta de rua=/ruf=) y apuntar acá a esa etiqueta aislada.
+reports_folder = DMARC-Reports
 archive_folder = Archive
+; delete: sólo seguro si reports_folder de arriba ya es una etiqueta aislada (ver comentario
+; arriba) — el reporte ya queda guardado en la base al procesarse, no hace falta conservar el
+; correo original ni acumular subcarpetas de archivo (Archive/Aggregate, Archive/Failure, etc.).
+delete = True
 
 [imap]
 host = imap.zoho.com
