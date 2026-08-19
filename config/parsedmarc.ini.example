@@ -20,16 +20,22 @@ save_failure = True
 ; servicio de larga duración (Worker en Railway), no como cron.
 watch = True
 ; reports_folder NUNCA debe ser "INBOX" si esta casilla también recibe correo real (de trabajo o
-; personal) — parsedmarc mueve/borra automáticamente TODO lo que encuentre ahí, incluido lo que no
-; sea un reporte DMARC válido (así se movió/perdió correo real una vez, ver README.md). La casilla
-; tiene que ser dedicada, o si no se puede, crear un filtro que etiquete solo los reportes reales
-; (ej. por "to:" la dirección exacta de rua=/ruf=) y apuntar acá a esa etiqueta aislada.
+; personal) — parsedmarc lee/mueve/borra TODO lo que encuentre ahí, incluido lo que no sea un
+; reporte DMARC válido (así se movió/perdió correo real una vez, ver README.md). La casilla tiene
+; que ser dedicada, o si no se puede, crear un filtro que etiquete solo los reportes reales (ej.
+; por "to:" la dirección exacta de rua=/ruf=) y apuntar acá a esa etiqueta aislada.
 reports_folder = DMARC-Reports
+; test = True: no mueve ni borra nada — el correo queda tal cual en reports_folder para siempre,
+; sin crear ninguna subcarpeta (Archive/Aggregate, Archive/Failure, etc.). Es seguro porque
+; ingest_aggregate_report()/ingest_forensic_report() (services/reports_service.py,
+; services/forensic_reports_service.py) son idempotentes por report_id/message_id: si parsedmarc
+; vuelve a leer el mismo correo en el próximo ciclo (watch=True), no crea un duplicado en la base.
+test = True
+; archive_folder queda sin usarse mientras test=True (no hay nada que mover) — si más adelante se
+; prefiere no acumular correos para siempre, comentar la línea de arriba y usar en cambio
+; `delete = True` (borra tras procesar, cero subcarpetas también) o dejar el archivado default
+; (crea Archive/Aggregate, etc., pero aislado, nunca toca correo real).
 archive_folder = Archive
-; delete: sólo seguro si reports_folder de arriba ya es una etiqueta aislada (ver comentario
-; arriba) — el reporte ya queda guardado en la base al procesarse, no hace falta conservar el
-; correo original ni acumular subcarpetas de archivo (Archive/Aggregate, Archive/Failure, etc.).
-delete = True
 
 [imap]
 host = imap.zoho.com

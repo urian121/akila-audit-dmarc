@@ -33,7 +33,11 @@ def _first_address(entries):
 def ingest_forensic_report(payload):
     """Guarda un reporte forense (RUF) ya parseado por parsedmarc — sólo metadata de triage, nunca el
     cuerpo/adjuntos/cabeceras completas del correo original (ver ForensicReport para la decisión de
-    retención/PII). Devuelve None si el dominio no está registrado o tiene el monitoreo desactivado."""
+    retención/PII). Devuelve None si el dominio no está registrado o tiene el monitoreo desactivado.
+
+    Idempotente por (monitored_domain_id, message_id): mismo motivo que ingest_aggregate_report en
+    reports_service.py — evita duplicar si el webhook recibe el mismo mensaje más de una vez.
+    `message_id` viene vacío rarísima vez; ahí no hay forma de dedupear, se guarda igual."""
     domain = (payload.get("reported_domain") or "").strip().lower()
     monitored = MonitoredDomain.query.filter_by(domain=domain).first()
     if not monitored:
@@ -45,6 +49,12 @@ def ingest_forensic_report(payload):
     parsed_sample = payload.get("parsed_sample") or {}
     from_address = (parsed_sample.get("from") or {}).get("address")
     to_address = _first_address(parsed_sample.get("to"))
+    message_id = parsed_sample.get("message_id")
+
+    if message_id:
+        existing = ForensicReport.query.filter_by(monitored_domain_id=monitored.id, message_id=message_id).first()
+        if existing:
+            return existing
 
     report = ForensicReport(
         monitored_domain_id=monitored.id,
@@ -59,7 +69,7 @@ def ingest_forensic_report(payload):
         auth_failure=",".join(payload.get("auth_failure") or []),
         dkim_domain=payload.get("dkim_domain"),
         subject=parsed_sample.get("subject"),
-        message_id=parsed_sample.get("message_id"),
+        message_id=message_id,
         from_address=from_address,
         to_address=to_address,
         sample_headers_only=payload.get("sample_headers_only"),

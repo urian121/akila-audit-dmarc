@@ -29,7 +29,13 @@ def _report_domain(payload):
 
 
 def ingest_aggregate_report(payload):
-    """Guarda un reporte DMARC agregado ya parseado por parsedmarc y revisa remitentes desconocidos."""
+    """Guarda un reporte DMARC agregado ya parseado por parsedmarc y revisa remitentes desconocidos.
+
+    Idempotente por (monitored_domain_id, report_id): si el mismo reporte ya se guardó antes, lo
+    devuelve tal cual en vez de crear un duplicado — necesario porque el webhook puede recibir el
+    mismo reporte más de una vez (reintento de parsedmarc, o una config de mailbox que no mueve/
+    borra el correo después de leerlo, ver AGENTS.md). `report_id` viene vacío rarísima vez (reporte
+    mal formado); en ese caso no hay forma de dedupear, se guarda igual en vez de perderlo."""
     domain = _report_domain(payload)
     monitored = MonitoredDomain.query.filter_by(domain=domain).first()
     if not monitored:
@@ -38,10 +44,16 @@ def ingest_aggregate_report(payload):
         return None  # monitoreo desactivado: se ignora, no se guarda ni se alerta
 
     meta = payload.get("report_metadata") or {}
+    report_id = meta.get("report_id")
+    if report_id:
+        existing = AggregateReport.query.filter_by(monitored_domain_id=monitored.id, report_id=report_id).first()
+        if existing:
+            return existing
+
     report = AggregateReport(
         monitored_domain_id=monitored.id,
         org_name=meta.get("org_name"),
-        report_id=meta.get("report_id"),
+        report_id=report_id,
         date_begin=_parse_datetime(meta.get("begin_date")),
         date_end=_parse_datetime(meta.get("end_date")),
     )
