@@ -68,7 +68,27 @@ def check_dkim(domain, selectors):
 
 def run_check(domain, extra_selector=None):
     """Ejecuta la auditoría completa del dominio (checkdmarc + DKIM) y la devuelve en un solo dict."""
-    result = check_domains([domain])
+    try:
+        result = check_domains([domain])
+    except AttributeError as error:
+        # Bug real y específico de checkdmarc (checkdmarc/dnssec.py:test_dnssec()), confirmado paso
+        # a paso con digisoc.net: asume que si una respuesta DNS trae exactamente 2 registros, son
+        # "el dato + su firma RRSIG" — pero un MX cuyo hostname resuelve vía CNAME (ej. hacia un
+        # gateway de filtrado de correo externo) también da exactamente 2 registros (el CNAME + el
+        # A final), ninguno es RRSIG, y dns.dnssec.validate() explota con "'NoneType' object has no
+        # attribute 'name'". No es una falla de DNSSEC del dominio (ni siquiera necesita tenerlo
+        # activado) ni algo para arreglar de nuestro lado — no hay parámetro en checkdmarc para
+        # saltear ese chequeo puntual.
+        raise RuntimeError(
+            f"No se pudo verificar el DNS de {domain}: uno de sus servidores de correo (MX) usa un "
+            "CNAME hacia un proveedor externo (ej. un gateway de filtrado de correo), y eso hace "
+            "fallar un chequeo interno de la librería de verificación (checkdmarc) — no es un "
+            "problema de la configuración del dominio."
+        ) from error
+    except Exception as error:
+        # Cualquier otra falla inesperada de checkdmarc que no sea este bug puntual — mensaje
+        # genérico en vez de un traceback interno de Python.
+        raise RuntimeError(f"No se pudo completar la verificación de DNS de {domain}: {error}") from error
     selectors = list(COMMON_DKIM_SELECTORS)
     if extra_selector and extra_selector not in selectors:
         selectors.append(extra_selector)

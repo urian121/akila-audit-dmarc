@@ -271,7 +271,10 @@ def check(domain):
     devuelve completa. Rate limit: 10/minuto por IP (Fase 3 de API_PLAN.md) — es el único endpoint
     de la API sin API key, y hace consultas DNS reales por request."""
     custom_selector = request.args.get("selector")
-    result = run_check(domain, custom_selector)
+    try:
+        result = run_check(domain, custom_selector)
+    except Exception as error:
+        return jsonify({"error": f"No se pudo completar el análisis: {error}"}), 500
     return jsonify(result)
 
 
