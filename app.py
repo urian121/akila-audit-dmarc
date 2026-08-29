@@ -297,6 +297,33 @@ def api_dominios():
     return jsonify({"dominios": [serialize_monitored_domain(d) for d in domains]})
 
 
+@app.route("/api/v1/dominios", methods=["POST"])
+@require_api_key
+def api_dominios_create():
+    """Registra un dominio nuevo para monitoreo bajo la cuenta dueña de la API key (equivalente al
+    formulario de /monitoreo, pero sin sesión — mismas reglas: reactiva un dominio propio inactivo
+    en vez de duplicarlo, y respeta el límite de dominios activos del plan).
+    Body JSON: {"domain": "tudominio.com", "owner_email": "correo@donde-recibir-alertas.com"}.
+    `owner_email` es opcional — si falta, usa el email de la cuenta dueña de la API key."""
+    payload = request.get_json(silent=True) or {}
+    domain = (payload.get("domain") or "").strip().lower()
+    owner_email = (payload.get("owner_email") or "").strip() or g.api_user.email
+
+    if not is_valid_domain(domain):
+        return jsonify({"error": "Ingresa un dominio válido, por ejemplo: tudominio.com"}), 400
+    if "@" not in owner_email:
+        return jsonify({"error": "Ingresa un correo válido para recibir las alertas."}), 400
+
+    monitored, created, error = register_domain(domain, owner_email, g.api_user.id)
+    if error == "other_user":
+        return jsonify({"error": "Ese dominio ya está siendo monitoreado por otra cuenta."}), 409
+    if error == "limit_reached":
+        limit = get_max_domains(g.api_user.id)
+        return jsonify({"error": f"Alcanzaste el límite de {limit} dominios activos de tu plan."}), 403
+
+    return jsonify({"dominio": serialize_monitored_domain(monitored)}), 201 if created else 200
+
+
 @app.route("/api/v1/dominios/<access_token>", methods=["GET"])
 @require_api_key
 def api_dominio_dashboard(access_token):
@@ -383,7 +410,11 @@ def api_dominio_tendencias(access_token):
     if monitored is None:
         return jsonify({"error": "No se encontró ese dominio."}), 404
     _, days = _parse_rango(allow_todos=False)
-    return jsonify(get_trends_data(monitored, days))
+    data = get_trends_data(monitored, days)
+    data["policy_label"] = DMARC_POLICY_LABELS.get(
+        data["dmarc_policy"], (data["dmarc_policy"] or "Desconocida", None)
+    )[0]
+    return jsonify(data)
 
 
 @app.route("/api/v1/dominios/<access_token>/impacto", methods=["GET"])
@@ -396,7 +427,37 @@ def api_dominio_impacto(access_token):
     if monitored is None:
         return jsonify({"error": "No se encontró ese dominio."}), 404
     _, days = _parse_rango(allow_todos=False)
-    return jsonify(get_impact_analysis(monitored, days))
+    data = get_impact_analysis(monitored, days)
+    data["current_policy_label"] = DMARC_POLICY_LABELS.get(
+        data["current_policy"], (data["current_policy"] or "Desconocida", None)
+    )[0]
+    return jsonify(data)
+
+
+@app.route("/api/v1/dominios/<access_token>/protocolo", methods=["GET"])
+@require_api_key
+def api_dominio_protocolo(access_token):
+    """Estado de cada protocolo (chequeo DNS en vivo) — mismo cálculo que el grid "Estado del
+    protocolo" de Tendencias (build_cards), con el status ok/warn/fail ya resuelto por protocolo,
+    incluido DANE. No usa caché ni el snapshot guardado — corre el chequeo en el momento."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    data = run_check(monitored.domain)
+    return jsonify({"protocolos": build_cards(data)})
+
+
+@app.route("/api/v1/dominios/<access_token>/reportantes", methods=["GET"])
+@require_api_key
+def api_dominio_reportantes(access_token):
+    """Desglose de organizaciones reportantes (top 5 + "Otros") y resultados de política SPF/DKIM
+    (pass/fail) — equivalente a los 3 gráficos extra de Tendencias. Ya es JSON-safe tal cual.
+    Query params: rango (7d/30d/90d, default 30d)."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    _, days = _parse_rango(allow_todos=False)
+    return jsonify(get_report_breakdown(monitored, days))
 
 
 @app.route("/api/v1/dominios/<access_token>/analisis-ia", methods=["GET"])

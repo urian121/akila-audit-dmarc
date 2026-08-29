@@ -153,6 +153,28 @@ Lista los dominios monitoreados de la cuenta.
 }
 ```
 
+### `POST /api/v1/dominios`
+
+Registra un dominio nuevo para monitoreo bajo la cuenta dueña de la API key — equivalente al
+formulario de `/monitoreo`, pero sin sesión. Si el dominio ya estaba registrado por la misma
+cuenta pero inactivo, lo reactiva en vez de duplicarlo (respeta el límite de dominios activos
+del plan en ambos casos).
+
+Body (JSON):
+```json
+{ "domain": "tudominio.com", "owner_email": "correo@donde-recibir-alertas.com" }
+```
+`owner_email` es opcional — si falta, usa el email de la cuenta dueña de la API key.
+
+```json
+{ "dominio": { "id": 9, "domain": "tudominio.com", "access_token": "xxxxxxxx", "...": "..." } }
+```
+
+`201` si se creó un registro nuevo, `200` si reactivó uno existente. Errores:
+- `400` — dominio inválido o vacío.
+- `409` — el dominio ya está siendo monitoreado por **otra** cuenta.
+- `403` — la cuenta ya alcanzó el límite de dominios activos de su plan.
+
 ### `GET /api/v1/dominios/<access_token>`
 
 Dashboard completo de un dominio: alertas recientes (hasta 50), informes DMARC agregados
@@ -260,6 +282,7 @@ Volumen pass/fail día por día + tasa de cumplimiento, para graficar en el tiem
   "has_data": true,
   "total_pass": 1480, "total_fail": 20, "total": 1500, "pass_rate": 98.7,
   "dmarc_policy": "quarantine",
+  "policy_label": "Cuarentena",
   "period_label": "agosto 2026"
 }
 ```
@@ -276,12 +299,56 @@ afectados, que es el endpoint de arriba). Query params: `rango` (`7d`/`30d`/`90d
 {
   "has_data": true, "total_reports": 12, "total_messages": 1500, "total_fail": 20,
   "pass_rate": 98.7, "unique_sources": 4,
-  "current_policy": "quarantine", "policy_step": 1, "ready_to_enforce": true
+  "current_policy": "quarantine", "current_policy_label": "Cuarentena",
+  "policy_step": 1, "ready_to_enforce": true
 }
 ```
 
 `ready_to_enforce`: `true` si el `pass_rate` ya alcanza el 95% — umbral único de "cumplimiento" en
 toda la app (mismo que usan `/cumplimiento` e `/informes-dmarc`).
+
+### `GET /api/v1/dominios/<access_token>/protocolo`
+
+Estado de cada protocolo (chequeo DNS **en vivo**, no cacheado) — el mismo cálculo que arma el
+grid de tarjetas de `/tendencias/<token>` en la web, con el status (`ok`/`warn`/`fail`) ya resuelto
+por protocolo, incluido DANE (no está en `/api/check/<domain>`, que trae los datos crudos sin
+status pre-calculado).
+
+```json
+{
+  "protocolos": [
+    { "title": "DNSSEC", "status": "ok", "badge_label": "OK", "badge_cls": "...", "kind": "text", "text": "..." },
+    { "title": "SPF", "status": "ok", "badge_label": "OK", "badge_cls": "...", "kind": "spf", "record": "v=spf1 ..." },
+    { "title": "DMARC", "status": "warn", "...": "..." },
+    { "title": "DKIM", "status": "ok", "...": "..." },
+    { "title": "MX", "status": "ok", "kind": "mx", "hosts": ["..."] },
+    { "title": "DANE", "status": "ok", "kind": "dane", "hosts": ["..."] },
+    { "title": "MTA-STS", "status": "ok", "...": "..." },
+    { "title": "TLS-RPT", "status": "ok", "...": "..." },
+    { "title": "BIMI", "status": "warn", "...": "..." },
+    { "title": "Nameservers", "status": "ok", "kind": "list", "...": "..." }
+  ]
+}
+```
+
+Cada tarjeta trae `title`, `status` (`ok`/`warn`/`fail`/`na`), `badge_label`, `badge_cls`,
+`help_text` y campos extra según `kind` (`record`, `message`, `hosts`, `warnings`, `text`, etc.) —
+mismos campos que usa la plantilla HTML, sin transformar.
+
+### `GET /api/v1/dominios/<access_token>/reportantes`
+
+Desglose de organizaciones reportantes (top 5 por volumen + "Otros") y resultados de política
+SPF/DKIM (pass/fail), de los reportes DMARC agregados del período. Query params: `rango`
+(`7d`/`30d`/`90d`, default `30d`).
+
+```json
+{
+  "orgs": [{ "name": "google.com", "count": 1200 }, { "name": "Otros", "count": 45 }],
+  "has_orgs": true,
+  "spf_pass": 1450, "spf_fail": 50, "has_spf": true,
+  "dkim_pass": 1490, "dkim_fail": 10, "has_dkim": true
+}
+```
 
 ### `GET /api/v1/dominios/<access_token>/analisis-ia`
 
