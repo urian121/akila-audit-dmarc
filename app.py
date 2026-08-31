@@ -275,6 +275,9 @@ def check(domain):
         result = run_check(domain, custom_selector)
     except Exception as error:
         return jsonify({"error": f"No se pudo completar el análisis: {error}"}), 500
+    cards = build_cards(result)
+    result["summary"] = build_summary(result)
+    result["ai_summary"] = generate_summary(result.get("domain") or domain, cards)
     return jsonify(result)
 
 

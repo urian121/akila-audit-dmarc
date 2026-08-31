@@ -106,6 +106,27 @@ principal. No guarda nada. **Rate limit: 10 requests por minuto por IP** — al 
 Parámetro opcional: `?selector=` (selector DKIM adicional a probar, adelante de los que ya se
 detectan solos).
 
+Además de los datos crudos de DNS (`spf`, `dmarc`, `dkim`, `mx`, `dnssec`, `mta_sts`,
+`smtp_tls_reporting`, `bimi`, `ns`, `soa`), la respuesta incluye:
+
+```json
+{
+  "...": "... (campos crudos de DNS) ...",
+  "summary": {
+    "ok": 4, "warn": 6, "fail": 0, "total": 10,
+    "ok_pct": 40, "warn_pct": 60, "fail_pct": 0,
+    "score": 70, "score_color": "text-amber-600"
+  },
+  "ai_summary": "El dominio tiene una buena protección general, pero hay áreas que necesitan atención..."
+}
+```
+
+`summary`: conteo de protocolos en ok/advertencia/falla (10 protocolos evaluados en total,
+incluyendo DANE) + `score` (0-100, igual al que muestra la barra de salud del checker — una
+advertencia pesa la mitad que un ok, una falla no suma nada). `ai_summary` es el mismo resumen en
+lenguaje llano que genera la IA para la página del checker — `null` si la IA no está configurada
+(falta `OPENAI_PROJECT_API_KEY`) o falla; se degrada sola, el resto de la respuesta sigue igual.
+
 ### `GET /api/v1/me`
 
 Info de la cuenta dueña de la API key — también sirve para probar que la key funciona.
