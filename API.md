@@ -112,6 +112,23 @@ Además de los datos crudos de DNS (`spf`, `dmarc`, `dkim`, `mx`, `dnssec`, `mta
 ```json
 {
   "...": "... (campos crudos de DNS) ...",
+  "cards": [
+    { "title": "SPF", "status": "ok", "badge_label": "OK", "kind": "spf",
+      "help_text": "Define qué servidores pueden enviar correos en nombre de este dominio.",
+      "record": "v=spf1 include:_spf.google.com mx -all",
+      "mechanisms": [{ "prefix": "Incluye reglas de", "value": "_spf.google.com", "suffix": "" }],
+      "all_explanation": "Los demás servidores son rechazados (-all) — la opción más estricta.",
+      "warnings": [] },
+    { "title": "DANE", "status": "ok", "kind": "dane",
+      "help_text": "Ata el certificado TLS de tus servidores de correo a un registro DNS (TLSA)...",
+      "hosts": [{ "hostname": "aspmx.l.google.com", "has_tlsa": false, "dnssec": true }] },
+    "...": "... (una tarjeta por protocolo, mismo formato que /api/v1/dominios/<token>/protocolo)"
+  ],
+  "risks": [
+    { "title": "DMARC", "severity": "Media", "mitigation": "Sube la política DMARC a cuarentena o rechazo cuando estés listo — hoy sólo está en modo monitoreo, no bloquea nada." },
+    { "title": "TLS-RPT", "severity": "Baja", "mitigation": "Opcional: publica TLS-RPT para que te avisen si falla el cifrado del correo entrante.",
+      "dns_example": { "host": "_smtp._tls.tudominio.com", "type": "TXT", "value": "v=TLSRPTv1; rua=mailto:tls-reports@tudominio.com" } }
+  ],
   "summary": {
     "ok": 4, "warn": 6, "fail": 0, "total": 10,
     "ok_pct": 40, "warn_pct": 60, "fail_pct": 0,
@@ -121,11 +138,22 @@ Además de los datos crudos de DNS (`spf`, `dmarc`, `dkim`, `mx`, `dnssec`, `mta
 }
 ```
 
-`summary`: conteo de protocolos en ok/advertencia/falla (10 protocolos evaluados en total,
-incluyendo DANE) + `score` (0-100, igual al que muestra la barra de salud del checker — una
-advertencia pesa la mitad que un ok, una falla no suma nada). `ai_summary` es el mismo resumen en
-lenguaje llano que genera la IA para la página del checker — `null` si la IA no está configurada
-(falta `OPENAI_PROJECT_API_KEY`) o falla; se degrada sola, el resto de la respuesta sigue igual.
+`cards`: una tarjeta por protocolo evaluado (10 en total, incluye DANE), con `status`
+(`ok`/`warn`/`fail`/`na`) ya resuelto y una explicación en lenguaje simple (`help_text`) — mismo
+formato exacto que devuelve `GET /api/v1/dominios/<access_token>/protocolo` para un dominio ya
+registrado. Los campos extra varían según `kind` (`spf`, `dmarc`, `dkim`, `mx`, `dane`, `record`,
+`text`, `list`, `error`, `empty`).
+
+`risks`: solo las tarjetas en `warn`/`fail` (las que están `ok` no traen riesgo), con `severity`
+(`Alta`/`Media`/`Baja`) y una acción concreta a tomar (`mitigation`). Algunas incluyen
+`dns_example` (host/tipo/valor) con un registro de ejemplo para publicar, a modo de plantilla —
+no es un valor real, hay que adaptarlo (ver `rua`/`ruf` con la casilla propia del dominio).
+
+`summary`: conteo de protocolos en ok/advertencia/falla + `score` (0-100, igual al que muestra la
+barra de salud del checker — una advertencia pesa la mitad que un ok, una falla no suma nada).
+`ai_summary` es el mismo resumen en lenguaje llano que genera la IA para la página del checker —
+`null` si la IA no está configurada (falta `OPENAI_PROJECT_API_KEY`) o falla; se degrada sola, el
+resto de la respuesta sigue igual.
 
 ### `GET /api/v1/me`
 
