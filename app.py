@@ -18,7 +18,7 @@ from services.domain_health_analysis import generate_health_analysis
 from services.pdf_service import build_dashboard_pdf_bytes, build_pdf_bytes
 from utils.dmarc_builder import build_dmarc_value
 from models.user import DEFAULT_MAX_DOMAINS
-from services.monitoring_service import assign_plan, count_active_domains, get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_affected_senders, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
+from services.monitoring_service import assign_plan, count_active_domains, count_alerts_by_domain, get_compliance_overview, get_compliance_protocol_status, get_dashboard_data, get_dmarc_report_detail, get_domain_by_token, get_impact_analysis, get_max_domains, get_report_breakdown, get_subdomain_breakdown, get_trends_data, get_user_plan_form_data, list_affected_senders, list_domain_alerts, list_domain_senders, list_domains, list_dmarc_reports, register_domain, set_active, update_user_plan, verify_dns, verify_tls_rpt
 from services.forensic_reports_service import ingest_forensic_report
 from services.reports_service import ingest_aggregate_report
 from utils.domain_validation import is_valid_domain
@@ -297,9 +297,16 @@ def api_me():
 @app.route("/api/v1/dominios", methods=["GET"])
 @require_api_key
 def api_dominios():
-    """Lista los dominios monitoreados de la cuenta dueña de la API key (equivalente a /monitoreos/)."""
+    """Lista los dominios monitoreados de la cuenta dueña de la API key (equivalente a /monitoreos/).
+    Incluye `alert_count` (total de alertas históricas de cada dominio, no solo las no leídas)."""
     domains = list_domains(g.api_user.id)
-    return jsonify({"dominios": [serialize_monitored_domain(d) for d in domains]})
+    alert_counts = count_alerts_by_domain([d.id for d in domains])
+    serialized = []
+    for d in domains:
+        data = serialize_monitored_domain(d)
+        data["alert_count"] = alert_counts.get(d.id, 0)
+        serialized.append(data)
+    return jsonify({"dominios": serialized})
 
 
 @app.route("/api/v1/dominios", methods=["POST"])
@@ -505,6 +512,17 @@ def api_cumplimiento():
         }
         for item in overview
     ]})
+
+
+@app.route("/api/v1/cumplimiento/protocolos", methods=["GET"])
+@require_api_key
+def api_cumplimiento_protocolos():
+    """Chequeo de DNS en vivo (columna "DNS en vivo" de /cumplimiento) de todos los dominios de la
+    cuenta, corridos en paralelo. Aparte de /api/v1/cumplimiento a propósito — son N consultas DNS
+    reales que pueden tardar varios segundos, no debe bloquear la carga de la tabla principal."""
+    domains = list_domains(g.api_user.id)
+    protocol_status = get_compliance_protocol_status(domains)
+    return jsonify({"protocolos": protocol_status})
 
 
 def _serialize_dmarc_report_item(item):

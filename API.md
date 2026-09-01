@@ -196,11 +196,15 @@ Lista los dominios monitoreados de la cuenta.
       "id": 8, "domain": "tudominio.com", "access_token": "xxxxxxxx",
       "is_active": true, "dns_verified": true, "dns_verified_at": "2026-07-21T14:41:34+00:00",
       "tls_rpt_verified": false, "tls_rpt_verified_at": null,
-      "created_at": "2026-07-16T22:17:02+00:00"
+      "created_at": "2026-07-16T22:17:02+00:00", "alert_count": 3
     }
   ]
 }
 ```
+
+`alert_count`: total histórico de alertas de ese dominio (cambios de config + remitentes
+desconocidos), no solo las no leídas/no notificadas — para el detalle real usar
+`.../alertas` o el dashboard del dominio (`GET /api/v1/dominios/<access_token>`).
 
 ### `POST /api/v1/dominios`
 
@@ -446,6 +450,28 @@ Cumplimiento de TODOS los dominios de la cuenta, de un vistazo — igual que la 
 `status`: `"ok"` (política ≥ cuarentena y pass_rate ≥ 95%), `"attention"` (no cumple ese criterio,
 pero sí hubo tráfico) o `"no_data"` (sin tráfico en el período — no es una falla, sólo falta
 evidencia).
+
+### `GET /api/v1/cumplimiento/protocolos`
+
+Chequeo de DNS **en vivo** (no de tráfico histórico) de todos los dominios de la cuenta, corridos
+en paralelo — la columna "DNS en vivo" de `/cumplimiento`. A propósito es un endpoint aparte de
+`/api/v1/cumplimiento`: son N consultas DNS reales (una por dominio) que pueden tardar varios
+segundos en total, no debe bloquear la carga de la tabla principal. Sin query params — siempre es
+el estado actual.
+
+```json
+{
+  "protocolos": {
+    "8": { "ok": 4, "warn": 6, "fail": 0, "total": 10, "ok_pct": 40, "warn_pct": 60, "fail_pct": 0, "score": 70, "score_color": "text-amber-600" },
+    "9": null
+  }
+}
+```
+
+Las claves de `protocolos` son el `id` de cada dominio (como string, por cómo serializa JSON las
+claves de objeto) — mismo `id` que trae `dominio.id` en `/api/v1/dominios` y `/api/v1/cumplimiento`.
+El valor es el mismo formato que el campo `summary` de `GET /api/check/<domain>` — `null` si no se
+pudo completar el chequeo DNS de ese dominio puntual (no tumba el resto).
 
 ### `GET /api/v1/informes-dmarc`
 

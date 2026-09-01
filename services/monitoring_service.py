@@ -184,6 +184,21 @@ def list_domains(user_id):
     return MonitoredDomain.query.filter_by(user_id=user_id).order_by(MonitoredDomain.created_at.desc()).all()
 
 
+def count_alerts_by_domain(domain_ids):
+    """Cantidad total de alertas por dominio, en una sola consulta agrupada — evita hacer una
+    consulta aparte por dominio (N+1) al listar varios a la vez. Devuelve {monitored_domain_id: count}
+    (un dominio sin ninguna alerta simplemente no aparece en el dict — el caller debe usar .get(id, 0))."""
+    if not domain_ids:
+        return {}
+    rows = (
+        db.session.query(Alert.monitored_domain_id, func.count(Alert.id))
+        .filter(Alert.monitored_domain_id.in_(domain_ids))
+        .group_by(Alert.monitored_domain_id)
+        .all()
+    )
+    return dict(rows)
+
+
 def get_dashboard_data(access_token):
     """Arma los datos del dashboard privado de un dominio monitoreado (None si el token no existe)."""
     monitored = get_domain_by_token(access_token)
