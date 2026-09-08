@@ -388,6 +388,64 @@ Cada tarjeta trae `title`, `status` (`ok`/`warn`/`fail`/`na`), `badge_label`, `b
 `help_text` y campos extra según `kind` (`record`, `message`, `hosts`, `warnings`, `text`, etc.) —
 mismos campos que usa la plantilla HTML, sin transformar.
 
+### `GET /api/v1/dominios/<access_token>/dns`
+
+Instrucciones de DNS a publicar — equivalente a `/monitoreo/<token>/configuracion-dns` en la web.
+Sólo lectura, no persiste nada. No repite `dns_verified`/`tls_rpt_verified` (eso ya viene en el
+dominio de `GET /api/v1/dominios/<access_token>` — no hace falta pedirlo dos veces).
+
+```json
+{
+  "dns": {
+    "host": "_dmarc.tudominio.com",
+    "type": "TXT",
+    "value": "v=DMARC1; p=none; rua=mailto:postmaster@tudominio.com,mailto:reports@akila.io; pct=25; adkim=r; aspf=r;",
+    "has_existing_record": true,
+    "policy": { "p": "none", "sp": "", "pct": 25, "adkim": "r", "aspf": "r" },
+    "rua": "mailto:postmaster@tudominio.com,mailto:reports@akila.io",
+    "ruf": "mailto:postmaster@tudominio.com,mailto:reports@akila.io"
+  },
+  "extra_dns": {
+    "spf": { "record": "v=spf1 include:_spf.google.com ~all" },
+    "tls_rpt": {
+      "host": "_smtp._tls.tudominio.com",
+      "type": "TXT",
+      "value": "v=TLSRPTv1; rua=mailto:reports@akila.io",
+      "has_existing_record": false
+    },
+    "bimi": { "record": null },
+    "mta_sts": { "record": null }
+  }
+}
+```
+
+`dns.policy`/`dns.rua`/`dns.ruf` son las piezas sueltas del valor ya armado en `dns.value` — sirven
+para que el consumidor arme una vista previa interactiva (cambiar `p`/`sp`/`pct`/`adkim`/`aspf`) sin
+volver a golpear este endpoint por cada cambio; la fórmula es la misma que usa
+`utils/dmarc_builder.build_dmarc_value()`. `p`/`pct`/`adkim`/`aspf` siempre arrancan en el valor
+conservador (`none`/25%/relajado) sin importar la política que el dominio tenga publicada hoy — es
+un generador de un valor nuevo, no un espejo del registro existente.
+
+Si `extra_dns.spf.record` es `null` (el dominio no tiene SPF), se agrega `extra_dns.spf.provider`
+con `{ "hosts": [...], "label": "Google Workspace / Gmail" | null, "include": "include:_spf.google.com" | null }`,
+detectado a partir de sus MX — heurística no oficial, sólo un punto de partida.
+
+### `POST /api/v1/dominios/<access_token>/verificar-dns`
+
+Vuelve a consultar el DNS en vivo y guarda si ya se publicó la casilla de monitoreo (`reports@`) en
+el `rua=` de DMARC — botón "Verificar de nuevo" de la sección DMARC en `/configuracion-dns`. Sin
+body. Devuelve el dominio ya actualizado, no hace falta un GET aparte:
+
+```json
+{ "dominio": { "id": 8, "domain": "tudominio.com", "dns_verified": true, "dns_verified_at": "2026-07-29T19:19:00+00:00", "...": "..." } }
+```
+
+### `POST /api/v1/dominios/<access_token>/verificar-tls-rpt`
+
+Igual que `verificar-dns` pero para el `rua=` de TLS-RPT — botón "Verificar de nuevo" de la sección
+TLS-RPT en `/configuracion-dns`. Sin body. Devuelve el dominio actualizado
+(`tls_rpt_verified`/`tls_rpt_verified_at`), mismo formato que arriba.
+
 ### `GET /api/v1/dominios/<access_token>/reportantes`
 
 Desglose de organizaciones reportantes (top 5 por volumen + "Otros") y resultados de política

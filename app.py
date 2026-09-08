@@ -459,6 +459,46 @@ def api_dominio_protocolo(access_token):
     return jsonify({"protocolos": build_cards(data)})
 
 
+@app.route("/api/v1/dominios/<access_token>/dns", methods=["GET"])
+@require_api_key
+def api_dominio_dns(access_token):
+    """Instrucciones de DNS a publicar (equivalente a /monitoreo/<token>/configuracion-dns):
+    registro DMARC sugerido (con su política de partida, para que el consumidor arme la vista
+    previa del valor sin volver a consultar el DNS) + estado de SPF/TLS-RPT/BIMI/MTA-STS. Sólo
+    lectura, no persiste nada. No repite dns_verified/tls_rpt_verified (ya vienen en el dominio
+    de GET /api/v1/dominios/<access_token>)."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    dns, extra_dns = build_dns_screen_data(monitored.domain, DMARC_REPORTS_MAILBOX)
+    return jsonify({"dns": dns, "extra_dns": extra_dns})
+
+
+@app.route("/api/v1/dominios/<access_token>/verificar-dns", methods=["POST"])
+@require_api_key
+def api_dominio_verificar_dns(access_token):
+    """Vuelve a consultar el DNS en vivo y guarda si ya se publicó la casilla de monitoreo en el
+    rua= de DMARC (botón "Verificar de nuevo" de la sección DMARC en /configuracion-dns). Devuelve
+    el dominio actualizado para no requerir un GET aparte."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    monitored = verify_dns(access_token, DMARC_REPORTS_MAILBOX)
+    return jsonify({"dominio": serialize_monitored_domain(monitored)})
+
+
+@app.route("/api/v1/dominios/<access_token>/verificar-tls-rpt", methods=["POST"])
+@require_api_key
+def api_dominio_verificar_tls_rpt(access_token):
+    """Igual que verificar-dns pero para el rua= de TLS-RPT (botón "Verificar de nuevo" de la
+    sección TLS-RPT en /configuracion-dns)."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    monitored = verify_tls_rpt(access_token, DMARC_REPORTS_MAILBOX)
+    return jsonify({"dominio": serialize_monitored_domain(monitored)})
+
+
 @app.route("/api/v1/dominios/<access_token>/reportantes", methods=["GET"])
 @require_api_key
 def api_dominio_reportantes(access_token):
