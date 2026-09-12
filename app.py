@@ -499,6 +499,27 @@ def api_dominio_verificar_tls_rpt(access_token):
     return jsonify({"dominio": serialize_monitored_domain(monitored)})
 
 
+@app.route("/api/v1/dominios/<access_token>/toggle", methods=["POST"])
+@require_api_key
+def api_dominio_toggle(access_token):
+    """Activa o desactiva el monitoreo de un dominio.
+    Body JSON: {"is_active": true|false}
+    Devuelve el dominio actualizado. Si is_active=true y el plan ya alcanzó el límite de dominios
+    activos, devuelve 400 con error "limit_reached"."""
+    monitored = get_api_owned_domain(access_token)
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    body = request.json or {}
+    if "is_active" not in body:
+        return jsonify({"error": "El campo is_active es obligatorio."}), 400
+    monitored, error = set_active(access_token, bool(body["is_active"]))
+    if error == "limit_reached":
+        return jsonify({"error": "Alcanzaste el límite de dominios activos de tu plan."}), 400
+    if monitored is None:
+        return jsonify({"error": "No se encontró ese dominio."}), 404
+    return jsonify({"dominio": serialize_monitored_domain(monitored)})
+
+
 @app.route("/api/v1/dominios/<access_token>/reportantes", methods=["GET"])
 @require_api_key
 def api_dominio_reportantes(access_token):
