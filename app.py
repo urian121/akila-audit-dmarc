@@ -283,6 +283,28 @@ def check(domain):
     return jsonify(result)
 
 
+@app.route("/api/v1/auditoria/<domain>/pdf", methods=["GET"])
+@require_api_key
+def api_auditoria_pdf(domain):
+    """Genera y descarga el PDF del informe de auditoría (SPF/DMARC/DKIM/MX/…) para el dominio
+    indicado. Reutiliza build_result_context (mismo proceso que /reporte-pdf con sesión), pero
+    autenticado con API key para que el proxy de Akila pueda llamarlo sin sesión propia."""
+    domain = domain.strip().lower()
+    if not is_valid_domain(domain):
+        return jsonify({"error": "Dominio inválido."}), 400
+    try:
+        context = build_result_context(domain)
+        pdf_bytes = build_pdf_bytes(context)
+    except Exception as error:
+        return jsonify({"error": f"No se pudo generar el PDF: {error}"}), 500
+    filename = f"reporte-dmarc-{domain}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.route("/api/v1/me", methods=["GET"])
 @require_api_key
 def api_me():
